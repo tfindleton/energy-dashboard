@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Energy Dashboard</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner hero-frame">
+      <div class="hero-copy">
+        <div class="eyebrow">Local Tesla Energy Analytics</div>
+        <h1>Energy Dashboard</h1>
+        <p class="subtitle">
+          Compare solar generation, home usage, grid export, and grid import by day, ISO week,
+          month, or year-to-date. Use the custom trend view to inspect seasonal drift, load shifts,
+          and signs of reduced output over time.
+        </p>
+      </div>
+      <div class="hero-notes">
+        <div class="hero-note">
+          <div class="hero-note-label">Archive</div>
+          <div class="hero-note-value">CSV First</div>
+        </div>
+        <div class="hero-note">
+          <div class="hero-note-label">Patterns</div>
+          <div class="hero-note-value">Weekday habits</div>
+        </div>
+        <div class="hero-note">
+          <div class="hero-note-label">Sync</div>
+          <div class="hero-note-value">Daily at 1:00 AM</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel">
+      <h2 class="panel-title">Tesla Sign-In</h2>
+      <div id="signInCompact" class="compact-bar" hidden>
+        <div class="compact-main">
+          <div class="compact-label">Tesla Session</div>
+          <div id="signInCompactValue" class="compact-value">Connected</div>
+          <div id="signInCompactMeta" class="compact-meta">Local session cached for syncs.</div>
+        </div>
+        <div class="compact-actions">
+          <span id="signInStatusChip" class="status-chip">Connected</span>
+          <button id="toggleSignInPanelButton" class="secondary">Manage Sign-In</button>
+        </div>
+      </div>
+      <div id="signInDetails">
+      <div id="connectedAccountPanel" class="account-panel" hidden>
+        <div class="account-main">
+          <div class="compact-label">Connected Account</div>
+          <div id="connectedAccountEmail" class="account-value">Masked for screenshots</div>
+          <div class="subtle">Email stays masked by default. Reveal it only when needed.</div>
+        </div>
+        <div class="account-actions">
+          <button id="revealEmailButton" type="button" class="secondary">Reveal Email</button>
+          <button id="hideEmailButton" type="button" class="secondary" hidden>Hide Email</button>
+          <button id="connectedLogoutButton" type="button">Sign Out</button>
+        </div>
+      </div>
+      <div id="wizardIntro">
+      <p class="subtle">
+        This app uses the same local-browser flow as <code>tesla-solar-download</code>. Work through
+        the steps below in order and the rest of the dashboard will unlock once local data exists.
+      </p>
+      </div>
+      <div id="wizardContainer" class="wizard">
+        <section id="wizardStepAccount" class="wizard-step">
+          <div class="wizard-marker">1</div>
+          <div class="wizard-body">
+            <h3 class="wizard-title">Enter Tesla Account</h3>
+            <p class="subtle">Start with the Tesla account email. Site ID is optional and only needed if you want to pin one site.</p>
+            <div class="setup-grid wizard-grid">
+              <div class="field">
+                <label for="teslaEmail">Tesla Account Email</label>
+                <input id="teslaEmail" type="email" autocomplete="username" spellcheck="false" placeholder="name@example.com">
+              </div>
+              <div class="field">
+                <label for="energySiteId">Optional Site ID</label>
+                <input id="energySiteId" type="text" autocomplete="off" spellcheck="false">
+              </div>
+              <div class="field">
+                <label for="startLoginButton">Generate Link</label>
+                <button id="startLoginButton" class="secondary">Generate Tesla Login Link</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="wizardStepLoginLink" class="wizard-step">
+          <div class="wizard-marker">2</div>
+          <div class="wizard-body">
+            <h3 class="wizard-title">Open Tesla Login</h3>
+            <p class="subtle">Use the generated Tesla sign-in link. You can open it directly or copy it somewhere else.</p>
+            <div class="field">
+              <label for="generatedAuthUrl">Generated Tesla Login URL</label>
+              <input id="generatedAuthUrl" type="text" readonly spellcheck="false" placeholder="Generate the Tesla login link first">
+            </div>
+            <div class="wizard-actions">
+              <button id="openLoginLinkButton" class="secondary" disabled>Open Tesla Login</button>
+              <button id="copyLoginLinkButton" disabled>Copy Login Link</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="wizardStepFinish" class="wizard-step">
+          <div class="wizard-marker">3</div>
+          <div class="wizard-body">
+            <h3 class="wizard-title">Paste Final Tesla URL</h3>
+            <p class="subtle">After Tesla finishes, copy the final URL from the expected Page Not Found page and paste it here.</p>
+            <div class="setup-grid wizard-grid">
+              <div class="field wide">
+                <label for="authorizationResponse">Final Tesla URL</label>
+                <input id="authorizationResponse" type="text" autocomplete="off" spellcheck="false" placeholder="https://auth.tesla.com/void/callback?...">
+              </div>
+              <div class="field">
+                <label for="finishLoginButton">Complete Sign-In</label>
+                <button id="finishLoginButton">Finish Sign In</button>
+              </div>
+              <div class="field">
+                <label for="logoutButton">Reset Session</label>
+                <button id="logoutButton">Sign Out</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+      <div id="wizardHint" class="footer-note">
+        The Tesla page will end on a <code>Page Not Found</code> screen at <code>auth.tesla.com</code>.
+        That is expected for this local-only flow.
+      </div>
+      <div class="footer-note">
+        Once sign-in is complete, this app keeps the Tesla session token locally so future syncs only need to fetch new data.
+      </div>
+      <div id="setupStatus" class="status"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2 class="panel-title">Data Sync</h2>
+      <div class="row">
+        <div class="field">
+          <label for="siteSelect">Site</label>
+          <select id="siteSelect"></select>
+        </div>
+        <div class="field">
+          <label for="daysBack">Days To Sync</label>
+          <input id="daysBack" type="number" min="30" max="7300" step="1" value="1825">
+        </div>
+        <div class="field">
+          <label for="syncButton">Manual Sync</label>
+          <button id="syncButton">Sync Data</button>
+        </div>
+        <div class="field">
+          <label for="refreshButton">Refresh Charts</label>
+          <button id="refreshButton" class="secondary">Reload Views</button>
+        </div>
+      </div>
+      <div id="syncStatus" class="status"></div>
+      <div id="syncProgressShell" class="progress-shell" hidden>
+        <div class="progress-head">
+          <div id="syncProgressLabel" class="progress-label">Preparing Sync</div>
+          <div id="syncProgressCount" class="progress-count">0%</div>
+        </div>
+        <div class="progress-track">
+          <div id="syncProgressBar" class="progress-bar"></div>
+        </div>
+        <div id="syncProgressMessage" class="progress-message"></div>
+      </div>
+      <div id="summaryGrid" class="summary-grid"></div>
+      <div class="footer-note">
+        Sync archives monthly Tesla energy CSVs plus daily intraday power CSVs on disk, then
+        upserts SQLite from the energy archive so the dashboard stays fast and the raw history
+        remains recoverable.
+      </div>
+    </section>
+
+    <section class="panel" id="insightsPanel">
+      <div class="panel-header">
+        <div>
+          <h2 class="panel-title">Homeowner Insights</h2>
+          <div id="insightsMeta" class="meta"></div>
+        </div>
+      </div>
+      <div id="insightsSections" class="insight-sections"></div>
+    </section>
+
+    <section class="panel" id="chartWorkspacePanel">
+      <div class="panel-header">
+        <div>
+          <h2 class="panel-title">Chart Workspace</h2>
+          <div class="subtle">Switch between troubleshooting watchlists, seasonal comparisons, performance overlays, weekday patterns, and open-ended trends.</div>
+        </div>
+      </div>
+      <div id="chartViewTabs" class="chart-tabs">
+        <button type="button" class="secondary chart-tab" data-chart-view="diagnostics">Troubleshooting</button>
+        <button type="button" class="secondary chart-tab" data-chart-view="daycompare">Day Compare</button>
+        <button type="button" class="secondary chart-tab" data-chart-view="performance">Performance</button>
+        <button type="button" class="secondary chart-tab" data-chart-view="comparison">Seasonal</button>
+        <button type="button" class="secondary chart-tab" data-chart-view="pattern">Weekday Pattern</button>
+        <button type="button" class="secondary chart-tab" data-chart-view="trend">Custom Trend</button>
+      </div>
+    </section>
+
+    <section class="panel" id="diagnosticsPanel" data-chart-panel="diagnostics">
+      <div class="panel-header">
+        <div>
+          <h2 class="panel-title">Troubleshooting Watchlist</h2>
+          <div id="diagnosticsMeta" class="meta"></div>
+        </div>
+      </div>
+      <div id="diagnosticsAlerts" class="diagnostic-alerts"></div>
+      <div id="diagnosticsSections" class="insight-sections"></div>
+      <div id="diagnosticsTables" class="diagnostic-tables"></div>
+    </section>
+
+    <section class="panel" id="dayComparePanel" data-chart-panel="daycompare">
+      <h2 class="panel-title">Day Compare</h2>
+      <div class="day-compare-toolbar">
+        <div class="field day-compare-date-field">
+          <label for="dayCompareDate">Base Or Added Day</label>
+          <input id="dayCompareDate" type="date">
+        </div>
+        <div class="field day-compare-action-field">
+          <label for="dayCompareAddButton">Add Day</label>
+          <button id="dayCompareAddButton" class="secondary">Add Day</button>
+        </div>
+        <div class="field day-compare-action-field">
+          <label for="dayCompareRefreshButton">Update Chart</label>
+          <button id="dayCompareRefreshButton">Refresh</button>
+        </div>
+      </div>
+      <div class="field day-compare-metric-field">
+        <label for="dayCompareMetricPills">24-Hour Metric</label>
+        <input id="dayCompareMetric" type="hidden" value="load_power">
+        <div id="dayCompareMetricPills" class="metric-pills day-compare-metrics"></div>
+      </div>
+      <div class="day-compare-settings">
+        <div class="field day-compare-axis-field">
+          <label for="dayCompareYMax">Y-Axis Max (kW)</label>
+          <div class="inline-input-group">
+            <input id="dayCompareYMax" type="number" min="0.5" step="0.5" placeholder="Auto">
+            <button type="button" id="dayCompareYMaxAutoButton" class="secondary compact-button">Auto</button>
+          </div>
+          <div class="subtle">Leave blank to auto-scale to the selected days.</div>
+        </div>
+      </div>
+      <div class="range-pills day-compare-presets">
+        <button type="button" class="secondary day-quick-chip" data-day-quick="last7">Last 7 Days</button>
+        <button type="button" class="secondary day-quick-chip" data-day-quick="same-day-years">This Day Previous Years</button>
+        <button type="button" class="secondary day-quick-chip" data-day-quick="clear">Clear</button>
+      </div>
+      <div class="window-nav">
+        <button type="button" id="dayComparePrevButton" class="secondary">Prev</button>
+        <div id="dayCompareWindowLabel" class="subtle">Week paging works with Last 7 Days.</div>
+        <button type="button" id="dayCompareNextButton" class="secondary">Next</button>
+      </div>
+      <div id="dayCompareSelection" class="selection-chips"></div>
+      <div id="dayCompareMeta" class="meta"></div>
+      <div id="dayCompareHighlights" class="day-compare-highlights"></div>
+      <div id="dayCompareLegend" class="legend"></div>
+      <div class="chart-shell">
+        <svg id="dayCompareChart" class="chart" viewBox="0 0 960 420" preserveAspectRatio="none"></svg>
+      </div>
+      <details class="table-panel">
+        <summary>Show Day Compare Summary</summary>
+        <div id="dayCompareTable" class="table-wrap"></div>
+      </details>
+    </section>
+
+    <section class="panel" id="comparisonPanel" data-chart-panel="comparison">
+      <h2 class="panel-title">Seasonal Comparison</h2>
+      <div class="row">
+        <div class="field">
+          <label for="compareMode">Compare</label>
+          <select id="compareMode">
+            <option value="day">Same day each year</option>
+            <option value="week">Same ISO week each year</option>
+            <option value="month">Same month each year</option>
+            <option value="ytd">Year to date</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="anchorDate">Anchor Date</label>
+          <input id="anchorDate" type="date">
+        </div>
+        <div class="field">
+          <label for="compareYears">Years Back</label>
+          <input id="compareYears" type="number" min="2" max="20" step="1" value="6">
+        </div>
+        <div class="field">
+          <label for="compareButton">Build Comparison</label>
+          <button id="compareButton">Update Comparison</button>
+        </div>
+      </div>
+      <div class="window-nav">
+        <button type="button" id="comparisonPrevButton" class="secondary">Prev</button>
+        <div id="comparisonWindowLabel" class="subtle">Jump day, week, month, or YTD window from the anchor date.</div>
+        <button type="button" id="comparisonNextButton" class="secondary">Next</button>
+      </div>
+      <div id="comparisonMetricPills" class="metric-pills"></div>
+      <div id="comparisonMeta" class="meta"></div>
+      <div id="comparisonLegend" class="legend"></div>
+      <div class="chart-shell">
+        <svg id="comparisonChart" class="chart" viewBox="0 0 960 420" preserveAspectRatio="none"></svg>
+      </div>
+      <details class="table-panel">
+        <summary>Show Comparison Data Table</summary>
+        <div id="comparisonTable" class="table-wrap"></div>
+      </details>
+    </section>
+
+    <section class="panel" id="performancePanel" data-chart-panel="performance">
+      <div class="panel-header">
+        <div>
+          <h2 class="panel-title">Performance Compare</h2>
+          <div class="subtle">Overlay solar generation and home usage across day, week, month, or year windows.</div>
+        </div>
+      </div>
+      <div id="performanceScopePills" class="range-pills">
+        <button type="button" class="secondary scope-chip" data-scope="day">Day</button>
+        <button type="button" class="secondary scope-chip" data-scope="week">Week</button>
+        <button type="button" class="secondary scope-chip active" data-scope="month">Month</button>
+        <button type="button" class="secondary scope-chip" data-scope="year">Year</button>
+      </div>
+      <div id="performanceMeta" class="meta"></div>
+      <div id="performanceLegend" class="legend"></div>
+      <div class="chart-shell">
+        <svg id="performanceChart" class="chart" viewBox="0 0 960 420" preserveAspectRatio="none"></svg>
+      </div>
+      <details class="table-panel">
+        <summary>Show Performance Data Table</summary>
+        <div id="performanceTable" class="table-wrap"></div>
+      </details>
+    </section>
+
+    <section class="panel" id="patternPanel" data-chart-panel="pattern">
+      <h2 class="panel-title">Weekday Pattern</h2>
+      <div class="row">
+        <div class="field">
+          <label for="patternStart">Start Date</label>
+          <input id="patternStart" type="date">
+        </div>
+        <div class="field">
+          <label for="patternEnd">End Date</label>
+          <input id="patternEnd" type="date">
+        </div>
+        <div class="field">
+          <label for="patternValueMode">Pattern Mode</label>
+          <select id="patternValueMode">
+            <option value="average">Average kWh by weekday</option>
+            <option value="total">Total kWh by weekday</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="patternButton">Update Pattern</label>
+          <button id="patternButton">Update Pattern</button>
+        </div>
+      </div>
+      <div id="patternMetricPills" class="metric-pills"></div>
+      <div id="patternMeta" class="meta"></div>
+      <div id="patternLegend" class="legend"></div>
+      <div class="chart-shell">
+        <svg id="patternChart" class="chart" viewBox="0 0 960 420" preserveAspectRatio="none"></svg>
+      </div>
+      <details class="table-panel">
+        <summary>Show Weekday Pattern Data Table</summary>
+        <div id="patternTable" class="table-wrap"></div>
+      </details>
+    </section>
+
+    <section class="panel" id="trendPanel" data-chart-panel="trend">
+      <h2 class="panel-title">Custom Trend</h2>
+      <div class="row">
+        <div class="field">
+          <label for="trendStart">Start Date</label>
+          <input id="trendStart" type="date">
+        </div>
+        <div class="field">
+          <label for="trendEnd">End Date</label>
+          <input id="trendEnd" type="date">
+        </div>
+        <div class="field">
+          <label for="trendGranularity">Granularity</label>
+          <select id="trendGranularity">
+            <option value="day">Daily</option>
+            <option value="week">Weekly</option>
+            <option value="month">Monthly</option>
+            <option value="year">Yearly</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="trendChartType">Chart Type</label>
+          <select id="trendChartType">
+            <option value="line">Line</option>
+            <option value="bar">Bar</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="trendButton">Generate Graph</label>
+          <button id="trendButton">Update Trend</button>
+        </div>
+      </div>
+      <div id="metricPills" class="metric-pills"></div>
+      <div class="range-pills">
+        <button type="button" class="secondary range-chip" data-range="90d">90D</button>
+        <button type="button" class="secondary range-chip" data-range="1y">1Y</button>
+        <button type="button" class="secondary range-chip" data-range="3y">3Y</button>
+        <button type="button" class="secondary range-chip" data-range="all">All</button>
+      </div>
+      <div id="trendMeta" class="meta"></div>
+      <div id="trendLegend" class="legend"></div>
+      <div class="chart-shell">
+        <svg id="trendChart" class="chart" viewBox="0 0 960 420" preserveAspectRatio="none"></svg>
+      </div>
+      <details class="table-panel">
+        <summary>Show Trend Data Table</summary>
+        <div id="trendTable" class="table-wrap"></div>
+      </details>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

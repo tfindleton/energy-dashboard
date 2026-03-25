@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+download/
+tesla_auth.json
+tesla_auth.json.invalid-*
+tesla_solar.sqlite3
+*.sqlite3
+*.db
