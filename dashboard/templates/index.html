@@ -26,33 +26,21 @@
           and signs of reduced output over time.
         </p>
       </div>
-      <div class="hero-notes">
-        <div class="hero-note">
-          <div class="hero-note-label">Archive</div>
-          <div class="hero-note-value">CSV First</div>
-        </div>
-        <div class="hero-note">
-          <div class="hero-note-label">Sync</div>
-          <div class="hero-note-value">Daily at 1:00 AM</div>
-        </div>
-      </div>
+      <div id="heroStatusGrid" class="hero-status-grid" aria-live="polite"></div>
     </div>
   </header>
 
   <main class="layout">
-    <section class="panel" id="signInPanel">
-      <h2 class="panel-title">Tesla Sign-In</h2>
-      <div id="signInCompact" class="compact-bar" hidden>
-        <div class="compact-main">
-          <div class="compact-label">Tesla Session</div>
-          <div id="signInCompactValue" class="compact-value">Connected</div>
-          <div id="signInCompactMeta" class="compact-meta">Local session cached for syncs.</div>
-        </div>
-        <div class="compact-actions">
-          <span id="signInStatusChip" class="status-chip">Connected</span>
-          <button id="toggleSignInPanelButton" class="secondary">Manage Sign-In</button>
-        </div>
+    <div class="section-tabs-shell">
+      <div id="sectionViewTabs" class="section-tabs" role="tablist" aria-label="Dashboard sections">
+        <button type="button" class="section-tab" data-section-view="signin" role="tab" aria-selected="false">Tesla Sign-In</button>
+        <button type="button" class="section-tab" data-section-view="sync" role="tab" aria-selected="false">Data Sync</button>
+        <button type="button" class="section-tab" data-section-view="insights" role="tab" aria-selected="false">Homeowner Insights</button>
+        <button type="button" class="section-tab" data-section-view="charts" role="tab" aria-selected="false">Charts</button>
       </div>
+    </div>
+
+    <section class="panel section-panel" id="signInPanel" data-section-view="signin">
       <div id="signInDetails">
       <div id="connectedAccountPanel" class="account-panel" hidden>
         <div class="account-main">
@@ -144,25 +132,29 @@
       </div>
     </section>
 
-    <section class="panel" id="syncPanel">
-      <h2 class="panel-title">Data Sync</h2>
-      <div class="row">
-        <div class="field">
+    <section class="panel section-panel" id="syncPanel" data-section-view="sync">
+      <div class="row sync-actions-row">
+        <div class="field sync-site-field">
           <label for="siteSelect">Site</label>
           <select id="siteSelect"></select>
         </div>
-        <div class="field">
-          <label for="daysBack">Days To Sync</label>
-          <input id="daysBack" type="number" min="30" max="7300" step="1" value="1825">
-        </div>
-        <div class="field">
+        <div class="field sync-action-field">
           <label for="syncButton">Manual Sync</label>
-          <button id="syncButton">Sync Data</button>
+          <button id="syncButton">Sync Now</button>
         </div>
-        <div class="field">
-          <label for="refreshButton">Refresh Charts</label>
-          <button id="refreshButton" class="secondary">Reload Views</button>
+      </div>
+      <div class="field sync-cron-field">
+        <label for="syncCron">Auto Sync Schedule</label>
+        <div class="inline-input-group">
+          <input id="syncCron" class="sync-cron-input" type="text" autocomplete="off" spellcheck="false" placeholder="0 1 * * *" aria-describedby="syncCronHint syncCronValidation">
+          <button id="saveSyncCronButton" type="button" class="secondary compact-button">Save Schedule</button>
         </div>
+        <div id="syncCronHint" class="subtle">
+          Use local-time cron. Examples: <code>0 1 * * *</code> daily at 1:00 AM,
+          <code>0 6 * * 1-5</code> weekdays at 6:00 AM, or <code>off</code> to disable.
+          Need help? <a href="https://tool.crontap.com/cronjob-debugger" target="_blank" rel="noreferrer noopener">Open the Crontap debugger</a>.
+        </div>
+        <div id="syncCronValidation" class="sync-cron-feedback" hidden></div>
       </div>
       <div id="syncStatus" class="status"></div>
       <div id="syncProgressShell" class="progress-shell" hidden>
@@ -177,29 +169,19 @@
       </div>
       <div id="summaryGrid" class="summary-grid"></div>
       <div class="footer-note">
-        Sync archives monthly Tesla energy CSVs plus daily intraday power CSVs on disk, then
-        upserts SQLite from the energy archive so the dashboard stays fast and the raw history
-        remains recoverable.
+        Each sync checks the full local archive, downloads any missing Tesla CSVs, refreshes current
+        partial files, and upserts SQLite from the archive so the dashboard stays fast and the raw
+        history remains recoverable.
       </div>
     </section>
 
-    <section class="panel" id="insightsPanel">
-      <div class="panel-header">
-        <div class="panel-header-copy">
-          <h2 class="panel-title">Homeowner Insights</h2>
-          <div id="insightsMeta" class="meta"></div>
-        </div>
-      </div>
+    <section class="panel section-panel" id="insightsPanel" data-section-view="insights">
+      <div id="insightsMeta" class="meta section-meta"></div>
       <div id="insightsSections" class="insight-sections"></div>
     </section>
 
-    <section class="panel" id="chartWorkspacePanel">
-      <div class="panel-header">
-        <div class="panel-header-copy">
-          <h2 class="panel-title">Chart Workspace</h2>
-          <div class="subtle">Switch between troubleshooting watchlists, seasonal comparisons, performance overlays, weekday patterns, and open-ended trends.</div>
-        </div>
-      </div>
+    <section class="panel section-panel" id="chartWorkspacePanel" data-section-view="charts">
+      <div class="subtle section-context">Switch between troubleshooting watchlists, seasonal comparisons, performance overlays, weekday patterns, and open-ended trends.</div>
       <div id="chartViewTabs" class="chart-tabs">
         <button type="button" class="secondary chart-tab" data-chart-view="diagnostics">Troubleshooting</button>
         <button type="button" class="secondary chart-tab" data-chart-view="daycompare">Day Compare</button>
@@ -210,7 +192,7 @@
       </div>
     </section>
 
-    <section class="panel" id="diagnosticsPanel" data-chart-panel="diagnostics">
+    <section class="panel" id="diagnosticsPanel" data-section-view="charts" data-chart-panel="diagnostics">
       <div class="panel-header">
         <div class="panel-header-copy">
           <h2 class="panel-title">Troubleshooting Watchlist</h2>
@@ -222,7 +204,7 @@
       <div id="diagnosticsTables" class="diagnostic-tables"></div>
     </section>
 
-    <section class="panel" id="dayComparePanel" data-chart-panel="daycompare">
+    <section class="panel" id="dayComparePanel" data-section-view="charts" data-chart-panel="daycompare">
       <h2 class="panel-title">Day Compare</h2>
       <div class="day-compare-toolbar">
         <div class="field day-compare-date-field">
@@ -230,11 +212,11 @@
           <input id="dayCompareDate" type="date">
         </div>
         <div class="field day-compare-action-field">
-          <label for="dayCompareAddButton">Add Day</label>
+          <label for="dayCompareAddButton">Selection</label>
           <button id="dayCompareAddButton" class="secondary">Add Day</button>
         </div>
         <div class="field day-compare-action-field">
-          <label for="dayCompareRefreshButton">Update Chart</label>
+          <label for="dayCompareRefreshButton">Chart</label>
           <button id="dayCompareRefreshButton">Refresh</button>
         </div>
       </div>
@@ -253,15 +235,17 @@
           <div class="subtle">Leave blank to auto-scale to the selected days.</div>
         </div>
       </div>
-      <div class="range-pills day-compare-presets">
-        <button type="button" class="secondary day-quick-chip" data-day-quick="last7">Last 7 Days</button>
-        <button type="button" class="secondary day-quick-chip" data-day-quick="same-day-years">This Day Previous Years</button>
-        <button type="button" class="secondary day-quick-chip" data-day-quick="clear">Clear</button>
-      </div>
-      <div class="window-nav">
-        <button type="button" id="dayComparePrevButton" class="secondary">Prev</button>
-        <div id="dayCompareWindowLabel" class="subtle">Week paging works with Last 7 Days.</div>
-        <button type="button" id="dayCompareNextButton" class="secondary">Next</button>
+      <div class="day-compare-control-bar">
+        <div class="range-pills day-compare-presets">
+          <button type="button" class="secondary day-quick-chip" data-day-quick="same-day-years">Same Day Prior Years</button>
+          <button type="button" class="secondary day-quick-chip" data-day-quick="last7">Last 7 Days</button>
+        </div>
+        <div class="day-compare-nav-cluster">
+          <button type="button" id="dayComparePrevButton" class="secondary">Prev</button>
+          <div id="dayCompareWindowLabel" class="subtle">Page through the active compare set.</div>
+          <button type="button" id="dayCompareNextButton" class="secondary">Next</button>
+        </div>
+        <button type="button" class="secondary day-quick-chip day-quick-clear" data-day-quick="clear">Clear Selection</button>
       </div>
       <div id="dayCompareSelection" class="selection-chips"></div>
       <div id="dayCompareMeta" class="meta"></div>
@@ -276,7 +260,7 @@
       </details>
     </section>
 
-    <section class="panel" id="comparisonPanel" data-chart-panel="comparison">
+    <section class="panel" id="comparisonPanel" data-section-view="charts" data-chart-panel="comparison">
       <h2 class="panel-title">Seasonal Comparison</h2>
       <div class="row">
         <div class="field">
@@ -318,7 +302,7 @@
       </details>
     </section>
 
-    <section class="panel" id="performancePanel" data-chart-panel="performance">
+    <section class="panel" id="performancePanel" data-section-view="charts" data-chart-panel="performance">
       <div class="panel-header">
         <div class="panel-header-copy">
           <h2 class="panel-title">Performance Compare</h2>
@@ -342,7 +326,7 @@
       </details>
     </section>
 
-    <section class="panel" id="patternPanel" data-chart-panel="pattern">
+    <section class="panel" id="patternPanel" data-section-view="charts" data-chart-panel="pattern">
       <h2 class="panel-title">Weekday Pattern</h2>
       <div class="row">
         <div class="field">
@@ -377,7 +361,7 @@
       </details>
     </section>
 
-    <section class="panel" id="trendPanel" data-chart-panel="trend">
+    <section class="panel" id="trendPanel" data-section-view="charts" data-chart-panel="trend">
       <h2 class="panel-title">Custom Trend</h2>
       <div class="row">
         <div class="field">

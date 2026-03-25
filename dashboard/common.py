@@ -3,25 +3,11 @@
 
 from __future__ import annotations
 
-import argparse
-import calendar
-import csv
 import datetime as dt
 import json
 import mimetypes
 import os
-import sqlite3
-import statistics
-import sys
-import tempfile
-import time
-import threading
-import urllib.error
-import urllib.parse
-import urllib.request
-from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
 
 try:
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -35,13 +21,9 @@ DEFAULT_DB_FILENAME = "dashboard.sqlite3"
 DEFAULT_CONFIG_FILENAME = "tesla_auth.json"
 DEFAULT_DOWNLOAD_DIRNAME = "download"
 DEFAULT_DB_PATH = os.path.join(DEFAULT_DATA_DIR, DEFAULT_DB_FILENAME)
-DEFAULT_CONFIG_PATH = os.path.join(DEFAULT_DATA_DIR, DEFAULT_CONFIG_FILENAME)
-DEFAULT_DOWNLOAD_ROOT = os.path.join(DEFAULT_DATA_DIR, DEFAULT_DOWNLOAD_DIRNAME)
-DEFAULT_HISTORY_DAYS = 365 * 5
+FULL_SYNC_FALLBACK_DAYS = 365 * 10
 DEFAULT_POWER_BACKFILL_DAYS = 45
 DEFAULT_DIAGNOSTIC_WINDOW_DAYS = 2
-DEFAULT_SYNC_INTERVAL_MINUTES = 0
-DEFAULT_DAILY_SYNC_TIME = "01:00"
 DEFAULT_SERVE_HOST = "0.0.0.0"
 DEFAULT_TESLAPY_TIMEOUT = 15
 ARCHIVE_IMPORT_SCHEMA_VERSION = "2"
@@ -535,42 +517,3 @@ def detect_local_timezone_name() -> Optional[str]:
     local_tz = dt.datetime.now().astimezone().tzinfo
     key = getattr(local_tz, "key", None)
     return key if isinstance(key, str) else None
-
-
-def parse_daily_sync_time(value: str) -> Optional[Tuple[int, int]]:
-    raw = (value or "").strip().lower()
-    if raw in ("", "off", "none", "disabled", "manual", "0"):
-        return None
-    try:
-        hour_text, minute_text = raw.split(":", 1)
-        hour = int(hour_text)
-        minute = int(minute_text)
-    except (ValueError, AttributeError):
-        raise RuntimeError("Daily sync time must look like HH:MM, for example 01:00.")
-    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
-        raise RuntimeError("Daily sync time must be between 00:00 and 23:59.")
-    return hour, minute
-
-
-def describe_daily_sync_time(value: str) -> str:
-    parsed = parse_daily_sync_time(value)
-    if parsed is None:
-        return "Disabled"
-    hour, minute = parsed
-    label = dt.time(hour=hour, minute=minute).strftime("%I:%M %p")
-    return f"Daily at {label.lstrip('0')}"
-
-
-def latest_scheduled_daily_sync_utc(
-    daily_sync_time: str,
-    now: Optional[dt.datetime] = None,
-) -> Optional[dt.datetime]:
-    parsed = parse_daily_sync_time(daily_sync_time)
-    if parsed is None:
-        return None
-    hour, minute = parsed
-    local_now = now.astimezone() if now is not None else dt.datetime.now().astimezone()
-    scheduled_local = local_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    if scheduled_local > local_now:
-        scheduled_local -= dt.timedelta(days=1)
-    return scheduled_local.astimezone(dt.timezone.utc)

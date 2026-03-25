@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 .venv/
 .pytest_cache/
+/.ruff_cache
 
 # Project runtime data and local-only helpers
 /download/

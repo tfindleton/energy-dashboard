@@ -38,19 +38,40 @@ const CHART_COLORS = {
   axis: "rgba(149, 161, 178, 0.32)"
 };
 
+const ICONS = {
+  sun: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="M4.93 4.93l1.41 1.41"></path><path d="M17.66 17.66l1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="M4.93 19.07l1.41-1.41"></path><path d="M17.66 6.34l1.41-1.41"></path></svg>`,
+  home: `<svg viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5"></path><path d="M5 10v10h14V10"></path><path d="M10 20v-5h4v5"></path></svg>`,
+  gridImport: `<svg viewBox="0 0 24 24"><path d="M20 6v12"></path><path d="M20 12H7"></path><path d="M11 8l-4 4 4 4"></path></svg>`,
+  gridExport: `<svg viewBox="0 0 24 24"><path d="M4 6v12"></path><path d="M4 12h13"></path><path d="M13 8l4 4-4 4"></path></svg>`,
+  bolt: `<svg viewBox="0 0 24 24"><path d="M13 2L6 13h5l-1 9 8-12h-5l0-8z"></path></svg>`,
+  plus: `<svg viewBox="0 0 24 24"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>`,
+  refresh: `<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.36 6.36"></path><path d="M3 12A9 9 0 0 1 18.36 5.64"></path><path d="M3 17v-4h4"></path><path d="M21 7v4h-4"></path></svg>`,
+  shield: `<svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3.4 8.6-7 10-3.6-1.4-7-5-7-10V6l7-3z"></path><path d="M9.5 12.5l1.8 1.8 3.7-4.1"></path></svg>`,
+  clock: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>`,
+  chart: `<svg viewBox="0 0 24 24"><path d="M4 19V5"></path><path d="M4 19h16"></path><path d="M7 15l3-3 3 2 4-5"></path></svg>`,
+  chevronLeft: `<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"></path></svg>`,
+  chevronRight: `<svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"></path></svg>`,
+  x: `<svg viewBox="0 0 24 24"><path d="M6 6l12 12"></path><path d="M18 6L6 18"></path></svg>`,
+  calendar: `<svg viewBox="0 0 24 24"><path d="M8 2v4"></path><path d="M16 2v4"></path><path d="M3 9h18"></path><rect x="3" y="4" width="18" height="17" rx="2"></rect></svg>`
+};
+
 const DEFAULT_CHART_VIEW = "diagnostics";
 const VALID_CHART_VIEWS = new Set(["diagnostics", "daycompare", "performance", "comparison", "pattern", "trend"]);
+const DEFAULT_SECTION_VIEW = "charts";
+const VALID_SECTION_VIEWS = new Set(["signin", "sync", "insights", "charts"]);
 
 const PREFERENCE_KEYS = {
   dayCompareYMax: "teslaSolar.dayCompareYMax",
   panelCollapsedPrefix: "energyDashboard.panelCollapsed",
   insightCollapsedPrefix: "energyDashboard.insightCollapsed",
-  signInExpanded: "energyDashboard.signInExpanded",
-  chartView: "energyDashboard.chartView"
+  chartView: "energyDashboard.chartView",
+  sectionView: "energyDashboard.sectionView"
 };
 
 const state = {
   status: null,
+  sectionView: DEFAULT_SECTION_VIEW,
+  sectionViewResolved: false,
   chartView: DEFAULT_CHART_VIEW,
   dayComparePayload: null,
   dayCompareDates: [],
@@ -63,7 +84,6 @@ const state = {
   trendPayload: null,
   generatedAuthUrl: "",
   performanceScope: "month",
-  signInExpanded: false,
   revealEmail: false,
   syncPollTimer: null,
   syncRequestActive: false,
@@ -140,13 +160,6 @@ function savePreference(key, value) {
     window.localStorage.setItem(key, String(value));
   } catch (error) {
     // Ignore storage errors and keep the page functional.
-  }
-}
-
-function setSignInExpanded(expanded, options = {}) {
-  state.signInExpanded = Boolean(expanded);
-  if (options.persist !== false) {
-    savePreference(PREFERENCE_KEYS.signInExpanded, state.signInExpanded ? "1" : "0");
   }
 }
 
@@ -260,6 +273,12 @@ function initializeInsightGroupToggles(containerId) {
 
 function initializeCollapsiblePanels() {
   document.querySelectorAll("main > .panel").forEach((panel, index) => {
+    if (panel.classList.contains("section-panel")) {
+      panel.classList.remove("collapsible-panel", "panel-collapsed");
+      const existingToggle = panel.querySelector(":scope > .panel-toggle");
+      existingToggle?.remove();
+      return;
+    }
     panel.classList.add("collapsible-panel");
     if (!panel.id) {
       panel.dataset.panelKey = `panel-${index + 1}`;
@@ -294,6 +313,70 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+function iconMarkup(name, extraClass = "") {
+  const classes = ["ui-icon"];
+  if (extraClass) {
+    classes.push(extraClass);
+  }
+  return `<span class="${classes.join(" ")}" aria-hidden="true">${ICONS[name] || ICONS.bolt}</span>`;
+}
+
+function iconButtonMarkup(iconName, label) {
+  return `${iconMarkup(iconName)}<span>${escapeHtml(label)}</span>`;
+}
+
+function metricIconName(metricKey) {
+  switch (metricKey) {
+    case "solar_generation":
+    case "solar_power":
+      return "sun";
+    case "home_usage":
+    case "load_power":
+      return "home";
+    case "grid_import":
+    case "grid_import_power":
+      return "gridImport";
+    case "grid_export":
+    case "grid_export_power":
+      return "gridExport";
+    default:
+      return "bolt";
+  }
+}
+
+function insightIconSpec(sectionTitle, itemLabel = "", accent = "") {
+  const text = `${sectionTitle} ${itemLabel} ${accent}`.toLowerCase();
+  if (text.includes("solar")) {
+    return { icon: "sun", tone: "solar" };
+  }
+  if (text.includes("usage") || text.includes("load") || text.includes("home") || text.includes("self-powered")) {
+    return { icon: "home", tone: "load" };
+  }
+  if (text.includes("export")) {
+    return { icon: "gridExport", tone: "grid-export" };
+  }
+  if (text.includes("import")) {
+    return { icon: "gridImport", tone: "grid-import" };
+  }
+  if (accent === "solar") {
+    return { icon: "sun", tone: "solar" };
+  }
+  if (accent === "load") {
+    return { icon: "home", tone: "load" };
+  }
+  return { icon: "bolt", tone: "signal" };
+}
+
+function setControlButtonLabel(button, iconName, label) {
+  if (!button) {
+    return;
+  }
+  button.classList.add("button-with-icon");
+  button.innerHTML = iconButtonMarkup(iconName, label);
+  button.dataset.originalHtml = button.innerHTML;
+  button.dataset.originalLabel = label;
+}
+
 function formatNumber(value) {
   return new Intl.NumberFormat(undefined, {
     maximumFractionDigits: 1,
@@ -319,6 +402,20 @@ function formatDateTime(value) {
     return value;
   }
   return parsed.toLocaleString();
+}
+
+function formatDateTimeLines(value) {
+  if (!value) {
+    return { dateLine: "Scheduled", timeLine: "" };
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return { dateLine: value, timeLine: "" };
+  }
+  return {
+    dateLine: parsed.toLocaleDateString(),
+    timeLine: parsed.toLocaleTimeString()
+  };
 }
 
 function paletteColor(index, total, palette) {
@@ -457,12 +554,31 @@ function bindChartTooltips(svg) {
 }
 
 async function fetchJson(url, options = {}) {
-  const response = await fetch(url, options);
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload.error || `Request failed: ${response.status}`);
+  const { timeoutMs = 0, ...fetchOptions } = options;
+  const controller = timeoutMs > 0 && !fetchOptions.signal ? new AbortController() : null;
+  const timeoutId = controller
+    ? window.setTimeout(() => controller.abort(), timeoutMs)
+    : null;
+  if (controller) {
+    fetchOptions.signal = controller.signal;
   }
-  return payload;
+  try {
+    const response = await fetch(url, fetchOptions);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || `Request failed: ${response.status}`);
+    }
+    return payload;
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`Request timed out after ${Math.ceil(timeoutMs / 1000)}s.`);
+    }
+    throw error;
+  } finally {
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
+  }
 }
 
 function setStatus(message, tone = "") {
@@ -479,10 +595,15 @@ function setSetupStatus(message, tone = "") {
 
 function setButtonBusy(button, busy, label) {
   button.disabled = busy;
-  if (label) {
-    button.dataset.originalLabel = button.dataset.originalLabel || button.textContent;
-    button.textContent = busy ? label : button.dataset.originalLabel;
+  button.dataset.originalLabel = button.dataset.originalLabel || button.textContent || "";
+  button.dataset.originalHtml = button.dataset.originalHtml || button.innerHTML;
+  if (busy) {
+    if (label) {
+      button.textContent = label;
+    }
+    return;
   }
+  button.innerHTML = button.dataset.originalHtml || button.dataset.originalLabel;
 }
 
 function setGeneratedAuthUrl(url) {
@@ -551,33 +672,23 @@ function setStepState(id, { active = false, completed = false } = {}) {
 
 function updateSignInPanel(status) {
   const connected = Boolean(status.auth_configured);
-  const compact = $("signInCompact");
   const details = $("signInDetails");
   const email = (status.config?.email || "").trim();
   const accountPanel = $("connectedAccountPanel");
   const revealButton = $("revealEmailButton");
   const hideButton = $("hideEmailButton");
 
+  details.hidden = false;
   if (!connected) {
-    compact.hidden = true;
-    details.hidden = false;
     accountPanel.hidden = true;
     state.revealEmail = false;
     return;
   }
 
-  $("signInCompactValue").textContent = "Connected";
-  $("signInCompactMeta").textContent = "Local Tesla session cached for syncs.";
-  $("signInStatusChip").textContent = "Connected";
   $("connectedAccountEmail").textContent = email ? maskEmail(email, state.revealEmail) : "Masked for screenshots";
-  compact.hidden = false;
-  details.hidden = !state.signInExpanded;
-  accountPanel.hidden = !state.signInExpanded;
+  accountPanel.hidden = false;
   revealButton.hidden = state.revealEmail;
   hideButton.hidden = !state.revealEmail;
-  const toggleButton = $("toggleSignInPanelButton");
-  toggleButton.textContent = state.signInExpanded ? "Hide Sign-In" : "Manage Sign-In";
-  toggleButton.setAttribute("aria-expanded", String(state.signInExpanded));
 }
 
 function updateWizard(status) {
@@ -606,8 +717,8 @@ function updateWizard(status) {
   $("finishLoginButton").disabled = !pending;
   $("logoutButton").disabled = !pending && !connected;
   $("startLoginButton").disabled = connected;
-  $("teslaEmail").disabled = connected && !state.signInExpanded;
-  $("energySiteId").disabled = connected && !state.signInExpanded;
+  $("teslaEmail").disabled = connected;
+  $("energySiteId").disabled = connected;
 
   if (connected) {
     $("wizardHint").textContent = "Tesla sign-in is complete. You can sync new data whenever you want, and the scheduled sync will only fetch what is missing.";
@@ -759,6 +870,10 @@ function applyDayCompareAxisMax(payload) {
 
 function setDayComparePreset(preset) {
   state.dayComparePreset = preset || "custom";
+  document.querySelectorAll(".day-quick-chip").forEach((button) => {
+    const quick = button.dataset.dayQuick || "";
+    button.classList.toggle("active", quick !== "clear" && quick === state.dayComparePreset);
+  });
   renderDayCompareWindowNav();
 }
 
@@ -825,21 +940,19 @@ function renderDayCompareWindowNav() {
   const bounds = dayCompareRangeBounds();
   const nav = dayCompareNavConfig();
 
+  setControlButtonLabel(prevButton, "chevronLeft", nav?.prevLabel || "Prev");
+  setControlButtonLabel(nextButton, "chevronRight", nav?.nextLabel || "Next");
+
   if (!nav || !site) {
-    prevButton.textContent = "Prev";
-    nextButton.textContent = "Next";
     prevButton.disabled = true;
     nextButton.disabled = true;
-    labelNode.textContent = "Prev/Next works with This Day Previous Years or Last 7 Days.";
+    labelNode.textContent = "Prev and next work with Same Day Prior Years or Last 7 Days.";
     return;
   }
 
   const earliestStart = parseDateInput(site.data_start || "");
   const latestEnd = latestComparableDay(site);
   const anchor = parseDateInput($("dayCompareDate").value || state.status?.default_anchor_date);
-
-  prevButton.textContent = nav.prevLabel;
-  nextButton.textContent = nav.nextLabel;
 
   if (!anchor) {
     prevButton.disabled = true;
@@ -1060,11 +1173,149 @@ function hydrateSetupForm(status) {
   setGeneratedAuthUrl(config.pending_auth_url || state.generatedAuthUrl);
 }
 
+function hydrateSyncControls(status) {
+  const input = $("syncCron");
+  const nextValue = status.config?.sync_cron || status.auto_sync_cron || "";
+  if (document.activeElement !== input || !input.value.trim()) {
+    input.value = nextValue;
+  }
+}
+
+const DISABLED_SYNC_VALUES = new Set(["", "0", "off", "none", "disabled", "manual"]);
+
+function normalizeSyncCronInput(value) {
+  return String(value || "").trim().split(/\s+/).join(" ");
+}
+
+function parseCronFieldValue(raw, minimum, maximum, name, allowSundaySeven = false) {
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || String(parsed) !== raw) {
+    throw new Error(`Invalid ${name} value '${raw}'.`);
+  }
+  const normalized = allowSundaySeven && parsed === 7 ? 0 : parsed;
+  if (normalized < minimum || normalized > maximum) {
+    throw new Error(`${name} values must be between ${minimum} and ${maximum}.`);
+  }
+  return normalized;
+}
+
+function validateCronField(raw, minimum, maximum, name, allowSundaySeven = false) {
+  raw.split(",").forEach((part) => {
+    const token = part.trim();
+    if (!token) {
+      throw new Error(`Invalid ${name} field in cron expression.`);
+    }
+    let base = token;
+    if (token.includes("/")) {
+      const pieces = token.split("/");
+      if (pieces.length !== 2) {
+        throw new Error(`Invalid ${name} field in cron expression.`);
+      }
+      base = pieces[0];
+      const step = Number.parseInt(pieces[1], 10);
+      if (!Number.isFinite(step) || String(step) !== pieces[1]) {
+        throw new Error(`Invalid step '${pieces[1]}' in ${name} field.`);
+      }
+      if (step <= 0) {
+        throw new Error(`${name} field step must be above 0.`);
+      }
+    }
+    if (base === "*") {
+      return;
+    }
+    if (base.includes("-")) {
+      const rangePieces = base.split("-");
+      if (rangePieces.length !== 2) {
+        throw new Error(`Invalid ${name} field in cron expression.`);
+      }
+      const start = parseCronFieldValue(rangePieces[0], minimum, maximum, name, allowSundaySeven);
+      const end = parseCronFieldValue(rangePieces[1], minimum, maximum, name, allowSundaySeven);
+      if (start > end) {
+        throw new Error(`Invalid range '${base}' in ${name} field.`);
+      }
+      return;
+    }
+    parseCronFieldValue(base, minimum, maximum, name, allowSundaySeven);
+  });
+}
+
+function validateSyncCronInput(value) {
+  const normalized = normalizeSyncCronInput(value);
+  if (DISABLED_SYNC_VALUES.has(normalized.toLowerCase())) {
+    return { valid: true, value: "off" };
+  }
+  const parts = normalized.split(" ");
+  if (parts.length !== 5) {
+    return {
+      valid: false,
+      message: "Sync cron must use five fields like '0 1 * * *', or 'off' to disable."
+    };
+  }
+  try {
+    validateCronField(parts[0], 0, 59, "minute");
+    validateCronField(parts[1], 0, 23, "hour");
+    validateCronField(parts[2], 1, 31, "day-of-month");
+    validateCronField(parts[3], 1, 12, "month");
+    validateCronField(parts[4], 0, 6, "day-of-week", true);
+    return { valid: true, value: normalized };
+  } catch (error) {
+    return { valid: false, message: error.message || "Invalid cron expression." };
+  }
+}
+
+function setSyncCronValidation(message = "", tone = "") {
+  const input = $("syncCron");
+  const node = $("syncCronValidation");
+  const invalid = tone === "error" && Boolean(message);
+  input.classList.toggle("input-invalid", invalid);
+  input.setAttribute("aria-invalid", invalid ? "true" : "false");
+  if (!message) {
+    node.hidden = true;
+    node.textContent = "";
+    node.className = "sync-cron-feedback";
+    return;
+  }
+  node.hidden = false;
+  node.textContent = message;
+  node.className = tone ? `sync-cron-feedback ${tone}` : "sync-cron-feedback";
+}
+
+function applyStaticButtonIcons() {
+  setControlButtonLabel($("syncButton"), "refresh", "Sync Now");
+  setControlButtonLabel($("saveSyncCronButton"), "bolt", "Save Schedule");
+  setControlButtonLabel($("dayCompareAddButton"), "plus", "Add Day");
+  setControlButtonLabel($("dayCompareRefreshButton"), "refresh", "Refresh");
+  document.querySelectorAll(".section-tab").forEach((button) => {
+    const sectionView = button.dataset.sectionView || "charts";
+    const iconName = sectionView === "signin"
+      ? "shield"
+      : sectionView === "sync"
+        ? "refresh"
+        : sectionView === "insights"
+          ? "home"
+          : "chart";
+    const label = button.textContent || "";
+    button.classList.add("button-with-icon");
+    button.innerHTML = iconButtonMarkup(iconName, label.trim());
+    button.dataset.originalHtml = button.innerHTML;
+    button.dataset.originalLabel = label.trim();
+  });
+  document.querySelectorAll(".day-quick-chip").forEach((button) => {
+    const quick = button.dataset.dayQuick || "";
+    const iconName = quick === "clear" ? "x" : "calendar";
+    const label = button.textContent || "";
+    button.classList.add("button-with-icon");
+    button.innerHTML = iconButtonMarkup(iconName, label.trim());
+    button.dataset.originalHtml = button.innerHTML;
+    button.dataset.originalLabel = label.trim();
+  });
+}
+
 function buildTrendMetricPills() {
   $("metricPills").innerHTML = METRICS.map((metric, index) => `
     <label class="pill">
       <input type="checkbox" class="metricCheck" value="${metric.key}" ${index < 2 ? "checked" : ""}>
-      <span>${escapeHtml(metric.label)}</span>
+      <span class="metric-pill-content">${iconMarkup(metricIconName(metric.key))}<span>${escapeHtml(metric.label)}</span></span>
     </label>
   `).join("");
 }
@@ -1078,7 +1329,7 @@ function buildComparisonMetricPills() {
   $("comparisonMetricPills").innerHTML = METRICS.map((metric) => `
     <label class="pill">
       <input type="checkbox" class="comparisonMetricCheck" value="${metric.key}" checked>
-      <span>${escapeHtml(metric.label)}</span>
+      <span class="metric-pill-content">${iconMarkup(metricIconName(metric.key))}<span>${escapeHtml(metric.label)}</span></span>
     </label>
   `).join("");
 }
@@ -1092,7 +1343,7 @@ function buildPatternMetricPills() {
   $("patternMetricPills").innerHTML = METRICS.map((metric, index) => `
     <label class="pill">
       <input type="checkbox" class="patternMetricCheck" value="${metric.key}" ${index < 2 ? "checked" : ""}>
-      <span>${escapeHtml(metric.label)}</span>
+      <span class="metric-pill-content">${iconMarkup(metricIconName(metric.key))}<span>${escapeHtml(metric.label)}</span></span>
     </label>
   `).join("");
 }
@@ -1109,7 +1360,7 @@ function buildDayCompareMetricPills() {
       type="button"
       class="pill-toggle day-metric-pill ${metric.key === current ? "active" : ""}"
       data-metric="${metric.key}">
-      ${escapeHtml(metric.label)}
+      <span class="metric-pill-content">${iconMarkup(metricIconName(metric.key))}<span>${escapeHtml(metric.label)}</span></span>
     </button>
   `).join("");
 }
@@ -1169,6 +1420,49 @@ function setPerformanceScope(scope) {
   });
 }
 
+function defaultSectionViewForStatus(status) {
+  if ((status?.sites || []).length) {
+    return "charts";
+  }
+  if (status?.auth_configured) {
+    return "sync";
+  }
+  return "signin";
+}
+
+function updateChartPanelVisibility() {
+  const chartsVisible = state.sectionView === "charts";
+  document.querySelectorAll("[data-chart-panel]").forEach((panel) => {
+    const active = chartsVisible && panel.dataset.chartPanel === state.chartView;
+    panel.hidden = !active;
+    panel.classList.toggle("chart-panel-active", active);
+  });
+}
+
+function setSectionView(view, options = {}) {
+  const nextView = VALID_SECTION_VIEWS.has(view) ? view : DEFAULT_SECTION_VIEW;
+  state.sectionView = nextView;
+  if (options.persist !== false) {
+    savePreference(PREFERENCE_KEYS.sectionView, nextView);
+    state.sectionViewResolved = true;
+  }
+  document.querySelectorAll(".section-tab").forEach((button) => {
+    const active = button.dataset.sectionView === state.sectionView;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  document.querySelectorAll("[data-section-view]").forEach((panel) => {
+    if (panel.hasAttribute("data-chart-panel")) {
+      return;
+    }
+    panel.hidden = panel.dataset.sectionView !== state.sectionView;
+  });
+  updateChartPanelVisibility();
+  if (state.sectionView === "charts") {
+    window.requestAnimationFrame(() => rerenderChartsFromCache());
+  }
+}
+
 function setChartView(view, options = {}) {
   const nextView = VALID_CHART_VIEWS.has(view) ? view : DEFAULT_CHART_VIEW;
   state.chartView = nextView;
@@ -1176,12 +1470,14 @@ function setChartView(view, options = {}) {
     savePreference(PREFERENCE_KEYS.chartView, nextView);
   }
   document.querySelectorAll(".chart-tab").forEach((button) => {
-    button.classList.toggle("active", button.dataset.chartView === state.chartView);
+    const active = button.dataset.chartView === state.chartView;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
   });
-  document.querySelectorAll("[data-chart-panel]").forEach((panel) => {
-    panel.hidden = panel.dataset.chartPanel !== state.chartView;
-  });
-  window.requestAnimationFrame(() => rerenderChartsFromCache());
+  updateChartPanelVisibility();
+  if (state.sectionView === "charts") {
+    window.requestAnimationFrame(() => rerenderChartsFromCache());
+  }
 }
 
 function populateSites(status) {
@@ -1225,6 +1521,144 @@ function updateDataAvailability(status) {
   setDisabledBySelector(".comparisonMetricCheck", !hasData);
   setDisabledBySelector(".patternMetricCheck", !hasData);
   setDisabledBySelector(".scope-chip", !hasData);
+}
+
+function renderHeroStatus(status) {
+  const node = $("heroStatusGrid");
+  if (!node) {
+    return;
+  }
+  const email = (status.config?.email || "").trim();
+  const signInCard = !status.library_ready
+    ? {
+        label: "Sign-In Status",
+        value: "Install Required",
+        detail: status.message || "Install the Tesla dependency set before signing in.",
+        tone: "error",
+        icon: "shield"
+      }
+    : status.auth_configured
+      ? {
+          label: "Sign-In Status",
+          value: "Connected",
+          detail: email ? `Tesla session cached for ${maskEmail(email)}.` : "Local Tesla session is cached and ready.",
+          tone: "good",
+          icon: "shield"
+        }
+      : status.auth_pending
+        ? {
+            label: "Sign-In Status",
+            value: "Pending",
+            detail: "Paste the final Tesla URL to finish the Tesla sign-in flow.",
+            tone: "warning",
+            icon: "shield"
+          }
+        : email
+          ? {
+              label: "Sign-In Status",
+              value: "Setup Started",
+              detail: "Generate the Tesla login link and finish sign-in to unlock syncing.",
+              tone: "warning",
+              icon: "shield"
+            }
+          : {
+              label: "Sign-In Status",
+              value: "Not Connected",
+              detail: "Enter your Tesla account email to start local sign-in.",
+              tone: "error",
+              icon: "shield"
+            };
+
+  const syncCard = status.sync_in_progress
+    ? {
+        label: "Sync Status",
+        value: "Syncing Now",
+        detail: status.sync_progress?.message || "Updating the local Tesla cache and SQLite data.",
+        tone: "info",
+        icon: "refresh"
+      }
+    : status.last_sync_error
+      ? {
+          label: "Sync Status",
+          value: "Needs Attention",
+          detail: status.last_sync_error,
+          tone: "error",
+          icon: "refresh"
+        }
+      : status.auto_sync_missed
+        ? {
+            label: "Sync Status",
+            value: "Behind Schedule",
+            detail: `Missed scheduled sync at ${formatDateTime(status.auto_sync_missed_since)}.`,
+            tone: "warning",
+            icon: "refresh"
+          }
+        : status.last_sync
+          ? {
+              label: "Sync Status",
+              value: "Ready",
+              detail: `Last sync ${formatDateTime(status.last_sync)}.`,
+              tone: "good",
+              icon: "refresh"
+            }
+          : status.auth_configured
+            ? {
+                label: "Sync Status",
+                value: "Ready to Sync",
+                detail: "No cached data yet. Run a sync to import Tesla history.",
+                tone: "warning",
+                icon: "refresh"
+              }
+            : {
+                label: "Sync Status",
+                value: "Waiting on Sign-In",
+                detail: "Complete Tesla sign-in before syncing data.",
+                tone: "warning",
+                icon: "refresh"
+              };
+
+  const nextSyncLines = status.auto_sync_enabled
+    ? formatDateTimeLines(status.auto_sync_next_run)
+    : { dateLine: "Manual Only", timeLine: "" };
+  const nextSyncCard = {
+    label: "Next Sync",
+    dateLine: nextSyncLines.dateLine,
+    timeLine: nextSyncLines.timeLine,
+    detail: status.auto_sync_enabled
+      ? (status.auto_sync_description || "Automatic sync is enabled.")
+      : "Automatic sync is disabled. Manual sync is still available.",
+    tone: status.auto_sync_enabled ? "info" : "warning",
+    icon: "clock"
+  };
+
+  node.innerHTML = `
+    ${[signInCard, syncCard].map((card) => `
+      <article
+        class="hero-status-icon-badge ${escapeHtml(card.tone || "")}" tabindex="0"
+        aria-label="${escapeHtml(`${card.label}: ${card.value}`)}">
+        <div class="hero-status-icon-shell ${escapeHtml(card.tone || "")}">
+          ${iconMarkup(card.icon, "hero-status-icon")}
+        </div>
+        <div class="hero-status-tooltip" role="tooltip">
+          <div class="hero-status-tooltip-label">${escapeHtml(card.label)}</div>
+          <div class="hero-status-tooltip-value">${escapeHtml(card.value)}</div>
+          <div class="hero-status-tooltip-body">${escapeHtml(card.detail)}</div>
+        </div>
+      </article>
+    `).join("")}
+    <article class="hero-status-next-badge ${escapeHtml(nextSyncCard.tone || "")}">
+      <div class="hero-status-next-head">
+        <div class="hero-status-icon-shell ${escapeHtml(nextSyncCard.tone || "")}">
+          ${iconMarkup(nextSyncCard.icon, "hero-status-icon")}
+        </div>
+        <div class="hero-status-label">${escapeHtml(nextSyncCard.label)}</div>
+      </div>
+      <div class="hero-status-next-lines">
+        <span class="hero-status-date-line">${escapeHtml(nextSyncCard.dateLine)}</span>
+        ${nextSyncCard.timeLine ? `<span class="hero-status-time-line">${escapeHtml(nextSyncCard.timeLine)}</span>` : ""}
+      </div>
+    </article>
+  `;
 }
 
 function renderSummary(status) {
@@ -1317,26 +1751,38 @@ function renderInsights(payload) {
   }
 
   meta.textContent = payload.summary || "";
-  container.innerHTML = payload.sections.map((section) => `
-    <section class="insight-group" data-group-key="${escapeHtml(section.title || "")}">
-      <button type="button" class="subsection-toggle">
-        <span class="subsection-toggle-title">${escapeHtml(section.title || "")}</span>
-        <span class="subsection-toggle-icon" aria-hidden="true"></span>
-      </button>
-      <div class="subsection-body">
-        <div class="insight-grid">
-          ${(section.items || []).map((item) => `
-            <article class="insight-card ${escapeHtml(section.accent || "")} ${escapeHtml(item.tone || "")}">
-              <div class="insight-label">${escapeHtml(item.label || "")}</div>
-              <div class="insight-value">${escapeHtml(formatSignalValue(item.value, item.kind || "energy"))}</div>
-              <div class="insight-hint">${escapeHtml(item.hint || "")}</div>
-            </article>
-          `).join("")}
+  container.innerHTML = payload.sections.map((section) => {
+    const sectionSpec = insightIconSpec(section.title || "", "", section.accent || "");
+    return `
+      <section class="insight-group" data-group-key="${escapeHtml(section.title || "")}">
+        <div class="subsection-heading">
+          <div class="subsection-toggle-head">
+            ${iconMarkup(sectionSpec.icon, `subsection-icon-badge ${sectionSpec.tone}`)}
+            <span class="subsection-toggle-title">${escapeHtml(section.title || "")}</span>
+          </div>
         </div>
-      </div>
-    </section>
-  `).join("");
-  initializeInsightGroupToggles("insightsSections");
+        <div class="subsection-body">
+          <div class="insight-grid">
+            ${(section.items || []).map((item) => {
+              const itemSpec = insightIconSpec(section.title || "", item.label || "", section.accent || "");
+              return `
+                <article class="insight-card ${escapeHtml(section.accent || "")} ${escapeHtml(item.tone || "")}">
+                  <div class="insight-card-head">
+                    ${iconMarkup(itemSpec.icon, `insight-card-icon ${itemSpec.tone}`)}
+                    <div class="insight-label-wrap">
+                      <div class="insight-label">${escapeHtml(item.label || "")}</div>
+                    </div>
+                  </div>
+                  <div class="insight-value">${escapeHtml(formatSignalValue(item.value, item.kind || "energy"))}</div>
+                  <div class="insight-hint">${escapeHtml(item.hint || "")}</div>
+                </article>
+              `;
+            }).join("")}
+          </div>
+        </div>
+      </section>
+    `;
+  }).join("");
 }
 
 function renderDiagnostics(payload) {
@@ -1366,26 +1812,38 @@ function renderDiagnostics(payload) {
     </article>
   `).join("");
 
-  sectionsNode.innerHTML = payload.sections.map((section) => `
-    <section class="insight-group" data-group-key="${escapeHtml(section.title || "")}">
-      <button type="button" class="subsection-toggle">
-        <span class="subsection-toggle-title">${escapeHtml(section.title || "")}</span>
-        <span class="subsection-toggle-icon" aria-hidden="true"></span>
-      </button>
-      <div class="subsection-body">
-        <div class="insight-grid">
-          ${(section.items || []).map((item) => `
-            <article class="insight-card ${escapeHtml(section.accent || "")} ${escapeHtml(item.tone || "")}">
-              <div class="insight-label">${escapeHtml(item.label || "")}</div>
-              <div class="insight-value">${escapeHtml(formatSignalValue(item.value, item.kind || "energy"))}</div>
-              <div class="insight-hint">${escapeHtml(item.hint || "")}</div>
-            </article>
-          `).join("")}
+  sectionsNode.innerHTML = payload.sections.map((section) => {
+    const sectionSpec = insightIconSpec(section.title || "", "", section.accent || "");
+    return `
+      <section class="insight-group" data-group-key="${escapeHtml(section.title || "")}">
+        <div class="subsection-heading">
+          <div class="subsection-toggle-head">
+            ${iconMarkup(sectionSpec.icon, `subsection-icon-badge ${sectionSpec.tone}`)}
+            <span class="subsection-toggle-title">${escapeHtml(section.title || "")}</span>
+          </div>
         </div>
-      </div>
-    </section>
-  `).join("");
-  initializeInsightGroupToggles("diagnosticsSections");
+        <div class="subsection-body">
+          <div class="insight-grid">
+            ${(section.items || []).map((item) => {
+              const itemSpec = insightIconSpec(section.title || "", item.label || "", section.accent || "");
+              return `
+                <article class="insight-card ${escapeHtml(section.accent || "")} ${escapeHtml(item.tone || "")}">
+                  <div class="insight-card-head">
+                    ${iconMarkup(itemSpec.icon, `insight-card-icon ${itemSpec.tone}`)}
+                    <div class="insight-label-wrap">
+                      <div class="insight-label">${escapeHtml(item.label || "")}</div>
+                    </div>
+                  </div>
+                  <div class="insight-value">${escapeHtml(formatSignalValue(item.value, item.kind || "energy"))}</div>
+                  <div class="insight-hint">${escapeHtml(item.hint || "")}</div>
+                </article>
+              `;
+            }).join("")}
+          </div>
+        </div>
+      </section>
+    `;
+  }).join("");
 
   tablesNode.innerHTML = (payload.tables || []).map((table) => `
     <details class="table-panel">
@@ -1449,6 +1907,7 @@ function inspectDiagnosticDay(dateText, metricKey) {
   setDayCompareMetric(metricKey || "solar_power");
   $("anchorDate").value = dateText;
   $("compareMode").value = "day";
+  setSectionView("charts");
   setChartView("daycompare");
   applyDayCompareQuick("same-day-years");
   loadComparison().catch((error) => setStatus(error.message, "error"));
@@ -1833,11 +2292,17 @@ async function loadStatus() {
   updateBootOverlayForStatus(status);
   populateSites(status);
   hydrateSetupForm(status);
+  hydrateSyncControls(status);
+  renderHeroStatus(status);
   renderSummary(status);
   renderSyncProgress(status);
   updateWizard(status);
   updateSignInPanel(status);
   updateDataAvailability(status);
+  if (!state.sectionViewResolved) {
+    setSectionView(defaultSectionViewForStatus(status), { persist: false });
+    state.sectionViewResolved = true;
+  }
   if (!$("anchorDate").value) {
     $("anchorDate").value = status.default_anchor_date;
   }
@@ -2153,7 +2618,6 @@ async function finishTeslaLogin() {
     });
     setGeneratedAuthUrl("");
     $("authorizationResponse").value = "";
-    setSignInExpanded(false);
     state.revealEmail = false;
     setSetupStatus("Tesla sign-in completed.", "good");
     await loadStatus();
@@ -2179,7 +2643,6 @@ async function logoutTesla(event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({})
     });
-    setSignInExpanded(true);
     state.revealEmail = false;
     setGeneratedAuthUrl("");
     $("authorizationResponse").value = "";
@@ -2196,16 +2659,6 @@ async function logoutTesla(event) {
   }
 }
 
-function toggleSignInPanel() {
-  if (state.signInExpanded) {
-    state.revealEmail = false;
-  }
-  setSignInExpanded(!state.signInExpanded);
-  if (state.status) {
-    updateSignInPanel(state.status);
-  }
-}
-
 function revealEmail() {
   state.revealEmail = true;
   if (state.status) {
@@ -2217,6 +2670,55 @@ function hideEmail() {
   state.revealEmail = false;
   if (state.status) {
     updateSignInPanel(state.status);
+  }
+}
+
+async function saveSyncSchedule() {
+  const button = $("saveSyncCronButton");
+  const validation = validateSyncCronInput($("syncCron").value.trim() || "off");
+  if (!validation.valid) {
+    setSyncCronValidation(validation.message, "error");
+    setStatus(validation.message, "error");
+    return;
+  }
+  const syncCron = validation.value;
+  $("syncCron").value = syncCron;
+  setSyncCronValidation("");
+  setButtonBusy(button, true, "Saving...");
+  setStatus("Saving auto sync schedule...");
+  try {
+    const payload = await fetchJson("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sync_cron: syncCron }),
+      timeoutMs: 10000
+    });
+    const savedCron = payload.sync_cron || syncCron;
+    $("syncCron").value = savedCron;
+    state.status = {
+      ...(state.status || {}),
+      auto_sync_cron: savedCron,
+      auto_sync_enabled: payload.auto_sync_enabled ?? state.status?.auto_sync_enabled ?? savedCron !== "off",
+      auto_sync_description: payload.auto_sync_description || state.status?.auto_sync_description || "",
+      config: {
+        ...(state.status?.config || {}),
+        sync_cron: savedCron
+      }
+    };
+    renderHeroStatus(state.status);
+    renderSummary(state.status);
+    setStatus(`Auto sync schedule saved. ${payload.auto_sync_description || ""}`.trim(), "good");
+    window.setTimeout(() => {
+      loadStatus().catch(() => {
+        // Keep the saved-state message if the delayed refresh fails.
+      });
+    }, 2000);
+  } catch (error) {
+    const message = error.message || "Unable to save auto sync schedule.";
+    setSyncCronValidation(message, "error");
+    setStatus(message, "error");
+  } finally {
+    setButtonBusy(button, false);
   }
 }
 
@@ -2240,7 +2742,6 @@ async function runSync() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        days_back: Number($("daysBack").value || 1825),
         site_id: currentSiteId() || null
       })
     });
@@ -2395,7 +2896,6 @@ function pageComparisonWindow(direction) {
 
 function wireEvents() {
   $("startLoginButton").addEventListener("click", startTeslaLogin);
-  $("toggleSignInPanelButton").addEventListener("click", toggleSignInPanel);
   $("revealEmailButton").addEventListener("click", revealEmail);
   $("hideEmailButton").addEventListener("click", hideEmail);
   $("connectedLogoutButton").addEventListener("click", logoutTesla);
@@ -2406,7 +2906,14 @@ function wireEvents() {
   $("finishLoginButton").addEventListener("click", finishTeslaLogin);
   $("logoutButton").addEventListener("click", logoutTesla);
   $("syncButton").addEventListener("click", runSync);
-  $("refreshButton").addEventListener("click", safeReloadAll);
+  $("saveSyncCronButton").addEventListener("click", saveSyncSchedule);
+  $("syncCron").addEventListener("input", () => setSyncCronValidation(""));
+  $("syncCron").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      saveSyncSchedule().catch((error) => setStatus(error.message, "error"));
+    }
+  });
   $("dayCompareAddButton").addEventListener("click", () => {
     addDayCompareDate($("dayCompareDate").value);
     loadDayCompare().catch((error) => setStatus(error.message, "error"));
@@ -2497,8 +3004,14 @@ function wireEvents() {
       loadPerformance().catch((error) => setStatus(error.message, "error"));
     });
   });
+  document.querySelectorAll(".section-tab").forEach((button) => {
+    button.addEventListener("click", () => setSectionView(button.dataset.sectionView || DEFAULT_SECTION_VIEW));
+  });
   document.querySelectorAll(".chart-tab").forEach((button) => {
-    button.addEventListener("click", () => setChartView(button.dataset.chartView || "performance"));
+    button.addEventListener("click", () => {
+      setSectionView("charts");
+      setChartView(button.dataset.chartView || "performance");
+    });
   });
   window.addEventListener("resize", () => {
     if (state.resizeTimer) {
@@ -2515,10 +3028,16 @@ buildTrendMetricPills();
 buildComparisonMetricPills();
 buildPatternMetricPills();
 buildDayCompareMetricPills();
+applyStaticButtonIcons();
 $("dayCompareYMax").value = loadPreference(PREFERENCE_KEYS.dayCompareYMax, "");
-setSignInExpanded(loadPreference(PREFERENCE_KEYS.signInExpanded, "0") === "1", { persist: false });
 setPerformanceScope(state.performanceScope);
+const savedSectionView = loadPreference(PREFERENCE_KEYS.sectionView, "");
+if (VALID_SECTION_VIEWS.has(savedSectionView)) {
+  state.sectionViewResolved = true;
+  setSectionView(savedSectionView, { persist: false });
+} else {
+  setSectionView(DEFAULT_SECTION_VIEW, { persist: false });
+}
 setChartView(loadPreference(PREFERENCE_KEYS.chartView, state.chartView), { persist: false });
-initializeCollapsiblePanels();
 wireEvents();
 safeReloadAll({ initialLoad: true });

@@ -16,14 +16,14 @@ from dashboard import (
     build_weekday_pattern_payload,
     clamp_month_day,
     extract_history_rows,
-    latest_scheduled_daily_sync_utc,
+    latest_scheduled_sync_utc,
     normalize_cli_args,
     normalize_history_row,
     resolve_tzinfo,
 )
 from dashboard.cli import build_parser, migrate_legacy_storage_layout, resolve_runtime_paths
-from dashboard.common import DEFAULT_CONFIG_PATH, DEFAULT_DB_PATH, DEFAULT_DOWNLOAD_ROOT
-from dashboard.server import is_client_disconnect_error
+from dashboard.common import DEFAULT_DB_PATH, default_config_path_for_db_path, default_download_root_for_db_path
+from dashboard.server import http_request_logging_enabled, is_client_disconnect_error
 from dashboard.service import extract_installation_date, extract_site_name, extract_timezone
 
 
@@ -486,9 +486,9 @@ class DateHelperTests(unittest.TestCase):
         self.assertEqual(extract_timezone(payload, "UTC"), "America/Los_Angeles")
         self.assertEqual(extract_installation_date(payload), dt.date(2021, 8, 25))
 
-    def test_latest_scheduled_daily_sync_utc_uses_last_due_slot(self) -> None:
+    def test_latest_scheduled_sync_utc_uses_last_due_slot(self) -> None:
         now = dt.datetime(2026, 3, 23, 20, 30, tzinfo=dt.timezone.utc)
-        scheduled = latest_scheduled_daily_sync_utc("01:00", now=now)
+        scheduled = latest_scheduled_sync_utc("0 1 * * *", now=now)
 
         self.assertEqual(
             scheduled,
@@ -526,9 +526,23 @@ class CliTests(unittest.TestCase):
 
     def test_explicit_command_is_untouched(self) -> None:
         self.assertEqual(
-            normalize_cli_args(["sync", "--days-back", "30"]),
-            ["sync", "--days-back", "30"],
+            normalize_cli_args(["sync", "--site-id", "30"]),
+            ["sync", "--site-id", "30"],
         )
+
+    def test_serve_parser_accepts_debug_http_flag(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            parser = build_parser()
+            args = parser.parse_args(["serve", "--debug-http"])
+
+        self.assertTrue(args.debug_http)
+
+    def test_serve_parser_accepts_sync_cron_flag(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            parser = build_parser()
+            args = parser.parse_args(["serve", "--sync-cron", "15 4 * * 1-5"])
+
+        self.assertEqual(args.sync_cron, "15 4 * * 1-5")
 
     def test_default_runtime_paths_use_shared_data_directory(self) -> None:
         with mock.patch.dict(os.environ, {}, clear=True):
@@ -538,8 +552,8 @@ class CliTests(unittest.TestCase):
         db_path, config_path, download_root = resolve_runtime_paths(args)
 
         self.assertEqual(db_path, DEFAULT_DB_PATH)
-        self.assertEqual(config_path, DEFAULT_CONFIG_PATH)
-        self.assertEqual(download_root, DEFAULT_DOWNLOAD_ROOT)
+        self.assertEqual(config_path, default_config_path_for_db_path(DEFAULT_DB_PATH))
+        self.assertEqual(download_root, default_download_root_for_db_path(DEFAULT_DB_PATH))
 
     def test_config_and_download_root_follow_custom_db_directory(self) -> None:
         with mock.patch.dict(os.environ, {}, clear=True):
@@ -562,12 +576,14 @@ class CliTests(unittest.TestCase):
                 Path("download").mkdir()
                 Path("download/marker.txt").write_text("archive")
 
-                messages = migrate_legacy_storage_layout(DEFAULT_DB_PATH, DEFAULT_CONFIG_PATH, DEFAULT_DOWNLOAD_ROOT)
+                default_config_path = default_config_path_for_db_path(DEFAULT_DB_PATH)
+                default_download_root = default_download_root_for_db_path(DEFAULT_DB_PATH)
+                messages = migrate_legacy_storage_layout(DEFAULT_DB_PATH, default_config_path, default_download_root)
 
                 self.assertEqual(len(messages), 3)
                 self.assertTrue(Path(DEFAULT_DB_PATH).exists())
-                self.assertTrue(Path(DEFAULT_CONFIG_PATH).exists())
-                self.assertTrue(Path(DEFAULT_DOWNLOAD_ROOT, "marker.txt").exists())
+                self.assertTrue(Path(default_config_path).exists())
+                self.assertTrue(Path(default_download_root, "marker.txt").exists())
                 self.assertFalse(Path("tesla_solar.sqlite3").exists())
                 self.assertFalse(Path("tesla_auth.json").exists())
                 self.assertFalse(Path("download").exists())
@@ -601,12 +617,37 @@ class CliTests(unittest.TestCase):
                 os.chdir(previous_cwd)
 
 
+    def test_save_sync_settings_persists_cron_expression(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            app = TeslaSolarDashboard(
+                db_path=f"{tempdir}/test.sqlite3",
+                config_path=f"{tempdir}/tesla_auth.json",
+                download_root=f"{tempdir}/archive",
+            )
+
+            payload = app.save_sync_settings({"sync_cron": "15 4 * * 1-5"})
+
+            self.assertEqual(payload["sync_cron"], "15 4 * * 1-5")
+            self.assertEqual(app.config_public_payload()["sync_cron"], "15 4 * * 1-5")
+
+
 class ServerTests(unittest.TestCase):
     def test_client_disconnect_errors_are_detected(self) -> None:
         self.assertTrue(is_client_disconnect_error(BrokenPipeError()))
         self.assertTrue(is_client_disconnect_error(ConnectionAbortedError()))
         self.assertTrue(is_client_disconnect_error(ConnectionResetError()))
         self.assertFalse(is_client_disconnect_error(RuntimeError("boom")))
+
+    def test_http_request_logging_is_disabled_by_default(self) -> None:
+        server = object()
+        self.assertFalse(http_request_logging_enabled(server))
+
+    def test_http_request_logging_uses_server_flag(self) -> None:
+        enabled_server = type("Server", (), {"log_http_requests": True})()
+        disabled_server = type("Server", (), {"log_http_requests": False})()
+
+        self.assertTrue(http_request_logging_enabled(enabled_server))
+        self.assertFalse(http_request_logging_enabled(disabled_server))
 
 
 class CsvArchiveTests(unittest.TestCase):
@@ -963,11 +1004,10 @@ class AuthFlowTests(unittest.TestCase):
                 download_root=f"{tempdir}/archive",
             )
             app.auto_sync_enabled = True
-            app.auto_sync_interval_minutes = 0
-            app.auto_sync_daily_time = "01:00"
+            app.sync_cron_default = "0 1 * * *"
             app.set_sync_state("last_sync", "2026-03-22T00:30:00Z")
 
-            with mock.patch("dashboard.service.utc_now", return_value=dt.datetime(2026, 3, 23, 20, 30, tzinfo=dt.timezone.utc)):
+            with mock.patch("dashboard.service_views.utc_now", return_value=dt.datetime(2026, 3, 23, 20, 30, tzinfo=dt.timezone.utc)):
                 payload = app.status_payload()
 
             self.assertTrue(payload["auto_sync_missed"])

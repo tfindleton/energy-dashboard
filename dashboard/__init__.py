@@ -1,7 +1,6 @@
 from .common import (
     ARCHIVE_IMPORT_SCHEMA_VERSION,
     aggregate_daily_history_rows,
-    latest_scheduled_daily_sync_utc,
     normalize_history_row,
     resolve_tzinfo,
 )
@@ -13,6 +12,7 @@ from .payloads import (
     build_weekday_pattern_payload,
     clamp_month_day,
 )
+from .scheduler import latest_scheduled_sync_utc
 from .service import TeslaSolarDashboard, extract_history_rows
 from .cli import main, normalize_cli_args
 
@@ -27,7 +27,7 @@ __all__ = [
     'build_weekday_pattern_payload',
     'clamp_month_day',
     'extract_history_rows',
-    'latest_scheduled_daily_sync_utc',
+    'latest_scheduled_sync_utc',
     'main',
     'normalize_cli_args',
     'normalize_history_row',

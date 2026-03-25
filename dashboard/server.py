@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import datetime as dt
+import json
 import sys
 import threading
 import time
@@ -11,16 +11,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional
 
 from .common import (
-    DEFAULT_HISTORY_DAYS,
-    DEFAULT_DAILY_SYNC_TIME,
     guess_content_type,
     INDEX_TEMPLATE_PATH,
-    parse_daily_sync_time,
     read_text_file,
     resolve_static_path,
     utc_now,
-    describe_daily_sync_time,
 )
+from .scheduler import DEFAULT_SYNC_CRON, describe_sync_schedule, next_scheduled_sync_utc, normalize_sync_cron, parse_sync_cron
 from .service import TeslaSolarDashboard
 
 CLIENT_DISCONNECT_ERRORS = (BrokenPipeError, ConnectionAbortedError, ConnectionResetError)
@@ -30,75 +27,79 @@ def is_client_disconnect_error(error: BaseException) -> bool:
     return isinstance(error, CLIENT_DISCONNECT_ERRORS)
 
 
+def http_request_logging_enabled(server: Any) -> bool:
+    return bool(getattr(server, "log_http_requests", False))
+
+
 class BackgroundSyncWorker:
     def __init__(
         self,
         app: TeslaSolarDashboard,
-        interval_minutes: int,
-        daily_sync_time: str,
-        days_back: int,
+        sync_cron: str,
         site_id: Optional[str] = None,
     ) -> None:
         self.app = app
-        self.interval_minutes = max(interval_minutes, 0)
-        self.daily_sync_time = daily_sync_time
-        self.daily_sync_parts = parse_daily_sync_time(daily_sync_time)
-        self.days_back = days_back
+        self.default_sync_cron = normalize_sync_cron(sync_cron)
         self.site_id = site_id
         self.stop_event = threading.Event()
+        self.refresh_event = threading.Event()
         self.thread = threading.Thread(target=self._run, name="tesla-solar-sync", daemon=True)
 
     def start(self) -> None:
-        self.app.auto_sync_enabled = True
-        self.app.auto_sync_interval_minutes = self.interval_minutes
-        self.app.auto_sync_daily_time = self.daily_sync_time
-        self.app.auto_sync_description = (
-            f"Every {self.interval_minutes} min"
-            if self.interval_minutes > 0
-            else describe_daily_sync_time(self.daily_sync_time)
-        )
-        self.app.auto_sync_site_id = self.site_id
-        self._set_next_run()
+        self._apply_schedule_state(self.app.effective_sync_cron(self.default_sync_cron))
         self.thread.start()
 
     def stop(self) -> None:
         self.stop_event.set()
+        self.refresh_event.set()
+
+    def refresh_schedule(self) -> None:
+        self.refresh_event.set()
 
     def join(self, timeout: Optional[float] = None) -> None:
         self.thread.join(timeout=timeout)
 
-    def _next_run(self) -> dt.datetime:
-        if self.interval_minutes > 0:
-            return utc_now() + dt.timedelta(minutes=self.interval_minutes)
-        if self.daily_sync_parts is None:
-            raise RuntimeError("Auto sync is disabled.")
-        hour, minute = self.daily_sync_parts
-        local_now = dt.datetime.now().astimezone()
-        next_local = local_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if next_local <= local_now:
-            next_local += dt.timedelta(days=1)
-        return next_local.astimezone(dt.timezone.utc)
-
-    def _set_next_run(self) -> dt.datetime:
-        next_run = self._next_run()
-        self.app.auto_sync_next_run = next_run.replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        return next_run
+    def _apply_schedule_state(self, sync_cron: str, next_run: Optional[dt.datetime] = None) -> None:
+        enabled = parse_sync_cron(sync_cron) is not None
+        self.app.auto_sync_enabled = enabled
+        self.app.auto_sync_description = describe_sync_schedule(sync_cron)
+        self.app.auto_sync_next_run = (
+            next_run.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            if next_run is not None
+            else None
+        )
+        self.app.auto_sync_site_id = self.site_id
 
     def _run(self) -> None:
-        while True:
-            next_run = self._set_next_run()
+        while not self.stop_event.is_set():
+            sync_cron = self.app.effective_sync_cron(self.default_sync_cron)
+            schedule = parse_sync_cron(sync_cron)
+            if schedule is None:
+                self._apply_schedule_state(sync_cron, next_run=None)
+                self.refresh_event.wait()
+                self.refresh_event.clear()
+                continue
+
+            next_run = next_scheduled_sync_utc(sync_cron)
+            if next_run is None:
+                self._apply_schedule_state(sync_cron, next_run=None)
+                self.refresh_event.wait()
+                self.refresh_event.clear()
+                continue
+            self._apply_schedule_state(sync_cron, next_run=next_run)
             wait_seconds = max((next_run - utc_now()).total_seconds(), 1.0)
-            if self.stop_event.wait(wait_seconds):
+            if self.refresh_event.wait(wait_seconds):
+                self.refresh_event.clear()
+                continue
+            if self.stop_event.is_set():
                 break
             if not self.app.auth_configured():
                 continue
             try:
-                result = self.app.sync(days_back=self.days_back, requested_site_id=self.site_id)
+                result = self.app.sync(requested_site_id=self.site_id)
                 print(json.dumps({"background_sync": True, **result}), flush=True)
             except Exception as error:
                 print(f"[background-sync] {error}", file=sys.stderr, flush=True)
-            finally:
-                self._set_next_run()
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -184,12 +185,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/auth/logout":
                 self.respond_json(self.app.logout())
                 return
+            if parsed.path == "/api/settings":
+                payload = self.read_json_body()
+                self.respond_json(self.app.save_sync_settings(payload))
+                return
             if parsed.path == "/api/sync":
                 payload = self.read_json_body()
-                result = self.app.sync(
-                    days_back=int(payload.get("days_back") or DEFAULT_HISTORY_DAYS),
-                    requested_site_id=payload.get("site_id") or None,
-                )
+                result = self.app.sync(requested_site_id=payload.get("site_id") or None)
                 self.respond_json(result)
                 return
             self.respond_json({"error": "Not found"}, status=HTTPStatus.NOT_FOUND)
@@ -228,8 +230,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             raise RuntimeError("JSON body must be an object.")
         return payload
 
-    def log_message(self, fmt: str, *args: Any) -> None:  # pragma: no cover
-        sys.stderr.write("%s - - [%s] %s\n" % (self.address_string(), self.log_date_time_string(), fmt % args))
+    def log_message(self, format: str, *args: Any) -> None:  # pragma: no cover
+        if not http_request_logging_enabled(self.server):
+            return
+        sys.stderr.write("%s - - [%s] %s\n" % (self.address_string(), self.log_date_time_string(), format % args))
 
 
 def first_query_value(query: Dict[str, List[str]], key: str) -> str:
@@ -242,28 +246,28 @@ def run_server(
     host: str,
     port: int,
     open_browser: bool,
+    debug_http: bool = False,
     sync_on_start: bool = False,
-    sync_interval_minutes: int = 0,
-    daily_sync_time: str = DEFAULT_DAILY_SYNC_TIME,
-    days_back: int = DEFAULT_HISTORY_DAYS,
+    sync_cron: str = DEFAULT_SYNC_CRON,
     site_id: Optional[str] = None,
 ) -> None:
+    app.sync_cron_default = normalize_sync_cron(sync_cron)
     server = ThreadingHTTPServer((host, port), DashboardHandler)
     server.dashboard_app = app  # type: ignore[attr-defined]
-    worker = None
-    if sync_interval_minutes > 0 or parse_daily_sync_time(daily_sync_time) is not None:
-        worker = BackgroundSyncWorker(
-            app=app,
-            interval_minutes=sync_interval_minutes,
-            daily_sync_time=daily_sync_time,
-            days_back=days_back,
-            site_id=site_id,
-        )
-        worker.start()
+    server.log_http_requests = debug_http  # type: ignore[attr-defined]
+
+    worker = BackgroundSyncWorker(app=app, sync_cron=app.sync_cron_default, site_id=site_id)
+    app.sync_schedule_refresh = worker.refresh_schedule
+    worker.start()
+
     url = f"http://{host}:{port}/"
     print(f"Serving Energy Dashboard at {url}")
-    if worker:
+    if debug_http:
+        print("HTTP request logging enabled (debug mode).", flush=True)
+    if app.auto_sync_enabled:
         print(f"Background sync scheduled: {app.auto_sync_description}.", flush=True)
+    else:
+        print("Background sync disabled.", flush=True)
     if open_browser:
         try:
             import webbrowser
@@ -278,7 +282,7 @@ def run_server(
                 if app.auth_configured():
                     print("Initial sync starting in background.", flush=True)
                     print("Initial sync task: checking local archive, downloading missing Tesla data, and importing into SQLite.", flush=True)
-                    result = app.sync(days_back=days_back, requested_site_id=site_id)
+                    result = app.sync(requested_site_id=site_id)
                     print("Initial sync completed successfully.", flush=True)
                     print(json.dumps(result, indent=2), flush=True)
                 elif app.auth_login_ready():
@@ -303,6 +307,6 @@ def run_server(
         print("\nShutting down.")
     finally:
         server.server_close()
-        if worker:
-            worker.stop()
-            worker.join(timeout=5)
+        app.sync_schedule_refresh = None
+        worker.stop()
+        worker.join(timeout=5)

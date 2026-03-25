@@ -59,8 +59,8 @@ That auth JSON contains your Tesla session cache. Keep the mounted volume privat
 Container defaults:
 
 - port `8000`
-- daily sync at `1:00 AM`
-- `1825` day initial/backfill window
+- auto sync cron `0 1 * * *` (daily at 1:00 AM local server time)
+- full-history syncs reuse the local archive and only download missing Tesla files
 - DB path `/data/dashboard.sqlite3`
 - auth config `/data/tesla_auth.json`
 - archive root `/data/download`
@@ -71,9 +71,8 @@ Other common environment variables:
 - `TESLA_ENERGY_SITE_ID`
 - `TESLA_TIME_ZONE`
 - `PORT`
-- `SYNC_DAYS_BACK`
-- `SYNC_INTERVAL_MINUTES`
-- `SYNC_DAILY_TIME`
+- `SYNC_CRON`
+- `DEBUG_HTTP`
 
 Example with overrides:
 
@@ -84,7 +83,8 @@ docker run -d \
   -p 8080:8000 \
   -e TESLA_EMAIL=you@example.com \
   -e TESLA_ENERGY_SITE_ID=1234567890 \
-  -e SYNC_DAILY_TIME=03:30 \
+  -e SYNC_CRON="30 3 * * *" \
+  -e DEBUG_HTTP=1 \
   -v "$PWD/data:/data" \
   energy-dashboard
 ```
@@ -101,7 +101,7 @@ The app uses a guided TeslaPy local browser flow:
 4. Tesla will end on a `Page Not Found` screen at `auth.tesla.com`. That is expected.
 5. Copy the full URL from that final Tesla page.
 6. Paste it into the app and click `Finish Sign In`.
-7. Click `Sync Data`.
+7. Click `Sync Now`.
 
 After that, the cached Tesla session is reused for scheduled and manual syncs until it expires or you sign out.
 
@@ -154,7 +154,7 @@ By default, local runs keep runtime state under `data/`:
 
 If you install the package, use the current console command `tesla-energy-dashboard`.
 
-That defaults to `serve` on `0.0.0.0:8000`, starts the web UI immediately, and runs scheduled syncs with the same defaults used by the container. The server does not open a browser unless you explicitly pass `--open-browser`, so container runs stay headless by default.
+That defaults to `serve` on `0.0.0.0:8000`, starts the web UI immediately, and runs scheduled syncs with the same defaults used by the container. Syncs always walk the full archive window, but finalized CSVs are reused so only missing Tesla files are fetched. The server does not open a browser unless you explicitly pass `--open-browser`, so container runs stay headless by default. Per-request HTTP logs are also off by default; pass `--debug-http` locally or set `DEBUG_HTTP=1` in the container when you want to see every request while troubleshooting.
 
 On Windows, you can also run `start-local.bat`. It creates `.venv` with `uv`, installs requirements, and starts the dashboard on `http://127.0.0.1:8000/` without opening a browser automatically.
 
@@ -163,6 +163,8 @@ Useful local commands:
 ```bash
 python3 -m dashboard auth-start --email you@example.com
 python3 -m dashboard auth-finish --url "https://auth.tesla.com/void/callback?code=..."
-python3 -m dashboard sync --days-back 1825
-python3 -m dashboard serve --daily-sync-time off --sync-interval-minutes 0
+python3 -m dashboard sync
+python3 -m dashboard serve --sync-cron off
+python3 -m dashboard serve --sync-cron "0 6 * * 1-5"
+python3 -m dashboard serve --debug-http
 ```

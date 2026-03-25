@@ -8,16 +8,12 @@ import sys
 from typing import List, Optional, Sequence, Tuple
 
 from .common import (
-    DEFAULT_CONFIG_PATH,
     DEFAULT_DB_PATH,
-    DEFAULT_DAILY_SYNC_TIME,
-    DEFAULT_DOWNLOAD_ROOT,
-    DEFAULT_HISTORY_DAYS,
     DEFAULT_SERVE_HOST,
-    DEFAULT_SYNC_INTERVAL_MINUTES,
     default_config_path_for_db_path,
     default_download_root_for_db_path,
 )
+from .scheduler import DEFAULT_SYNC_CRON, normalize_sync_cron
 from .server import run_server
 from .service import TeslaSolarDashboard
 
@@ -60,6 +56,7 @@ def normalize_cli_args(argv: Sequence[str]) -> List[str]:
 
 def build_parser() -> argparse.ArgumentParser:
     db_default = os.environ.get("SOLAR_DASHBOARD_DB", DEFAULT_DB_PATH)
+    sync_cron_default = os.environ.get("SYNC_CRON", DEFAULT_SYNC_CRON)
 
     parser = argparse.ArgumentParser(
         description="Sync Tesla energy history locally and serve a comparison dashboard."
@@ -69,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=db_default,
         help=(
             f"SQLite database path (default: {db_default}; "
-            "auth config and downloads stay alongside the DB)"
+            "auth config, sync schedule, and downloads stay alongside the DB)"
         ),
     )
     subparsers = parser.add_subparsers(dest="command")
@@ -81,33 +78,26 @@ def build_parser() -> argparse.ArgumentParser:
     auth_finish = subparsers.add_parser("auth-finish", help="Finish TeslaPy sign-in from the final Tesla URL.")
     auth_finish.add_argument("--url", required=True, help="Full URL from Tesla's final Page Not Found screen.")
 
-    sync = subparsers.add_parser("sync", help="Download daily energy history into SQLite.")
-    sync.add_argument("--days-back", type=int, default=DEFAULT_HISTORY_DAYS, help="How much history to fetch.")
+    sync = subparsers.add_parser("sync", help="Download and import the full Tesla archive into SQLite.")
     sync.add_argument("--site-id", help="Optional energy site id override.")
 
     serve = subparsers.add_parser("serve", help="Start the local dashboard web server.")
     serve.add_argument("--host", default=DEFAULT_SERVE_HOST, help="Bind host.")
     serve.add_argument("--port", type=int, default=8000, help="Bind port.")
     serve.add_argument("--open-browser", action="store_true", help="Open the local page when the server starts.")
-    serve.add_argument("--sync-on-start", dest="sync_on_start", action="store_true", help="Run a sync before serving.")
+    serve.add_argument("--debug-http", action="store_true", help="Print every HTTP request for troubleshooting.")
+    serve.add_argument("--sync-on-start", dest="sync_on_start", action="store_true", help="Run a full sync before serving.")
     serve.add_argument(
         "--no-sync-on-start",
         dest="sync_on_start",
         action="store_false",
         help="Skip the initial sync and rely on scheduled or manual sync.",
     )
-    serve.add_argument("--days-back", type=int, default=DEFAULT_HISTORY_DAYS, help="History window if syncing on start.")
-    serve.add_argument("--site-id", help="Optional energy site id override for sync-on-start.")
+    serve.add_argument("--site-id", help="Optional energy site id override for scheduled or startup syncs.")
     serve.add_argument(
-        "--daily-sync-time",
-        default=os.environ.get("SYNC_DAILY_TIME", DEFAULT_DAILY_SYNC_TIME),
-        help="Daily auto-sync time in local server time (HH:MM). Use 'off' to disable.",
-    )
-    serve.add_argument(
-        "--sync-interval-minutes",
-        type=int,
-        default=DEFAULT_SYNC_INTERVAL_MINUTES,
-        help="Optional fixed background sync interval. Set above 0 to override the daily schedule.",
+        "--sync-cron",
+        default=sync_cron_default,
+        help="Cron schedule in local server time, for example '0 1 * * *'. Use 'off' to disable.",
     )
     serve.set_defaults(sync_on_start=True)
 
@@ -194,20 +184,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
 
     if command == "sync":
-        result = app.sync(days_back=args.days_back, requested_site_id=args.site_id)
+        result = app.sync(requested_site_id=args.site_id)
         print(json.dumps(result, indent=2))
         return 0
 
     if command == "serve":
+        app.sync_cron_default = normalize_sync_cron(args.sync_cron)
         run_server(
             app,
             host=args.host,
             port=args.port,
             open_browser=args.open_browser,
+            debug_http=args.debug_http,
             sync_on_start=args.sync_on_start,
-            sync_interval_minutes=max(args.sync_interval_minutes, 0),
-            daily_sync_time=args.daily_sync_time,
-            days_back=args.days_back,
+            sync_cron=app.sync_cron_default,
             site_id=args.site_id,
         )
         return 0
