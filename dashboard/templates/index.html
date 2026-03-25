@@ -6,7 +6,15 @@
   <title>Energy Dashboard</title>
   <link rel="stylesheet" href="/static/app.css">
 </head>
-<body>
+<body class="boot-loading">
+  <div id="bootOverlay" class="boot-overlay" role="status" aria-live="polite">
+    <div class="boot-card">
+      <div class="boot-spinner" aria-hidden="true"></div>
+      <div class="boot-label">Energy Dashboard</div>
+      <h2 id="bootTitle" class="boot-title">Loading dashboard</h2>
+      <p id="bootMessage" class="boot-message">Checking local status and preparing your views.</p>
+    </div>
+  </div>
   <header class="hero">
     <div class="hero-inner hero-frame">
       <div class="hero-copy">
@@ -24,10 +32,6 @@
           <div class="hero-note-value">CSV First</div>
         </div>
         <div class="hero-note">
-          <div class="hero-note-label">Patterns</div>
-          <div class="hero-note-value">Weekday habits</div>
-        </div>
-        <div class="hero-note">
           <div class="hero-note-label">Sync</div>
           <div class="hero-note-value">Daily at 1:00 AM</div>
         </div>
@@ -36,7 +40,7 @@
   </header>
 
   <main class="layout">
-    <section class="panel">
+    <section class="panel" id="signInPanel">
       <h2 class="panel-title">Tesla Sign-In</h2>
       <div id="signInCompact" class="compact-bar" hidden>
         <div class="compact-main">
@@ -140,7 +144,7 @@
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="syncPanel">
       <h2 class="panel-title">Data Sync</h2>
       <div class="row">
         <div class="field">

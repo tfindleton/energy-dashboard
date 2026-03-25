@@ -30,9 +30,13 @@ except ImportError:  # pragma: no cover
     ZoneInfoNotFoundError = Exception  # type: ignore[assignment]
 
 
-DEFAULT_DB_PATH = "tesla_solar.sqlite3"
-DEFAULT_CONFIG_PATH = "tesla_auth.json"
-DEFAULT_DOWNLOAD_ROOT = "download"
+DEFAULT_DATA_DIR = "data"
+DEFAULT_DB_FILENAME = "dashboard.sqlite3"
+DEFAULT_CONFIG_FILENAME = "tesla_auth.json"
+DEFAULT_DOWNLOAD_DIRNAME = "download"
+DEFAULT_DB_PATH = os.path.join(DEFAULT_DATA_DIR, DEFAULT_DB_FILENAME)
+DEFAULT_CONFIG_PATH = os.path.join(DEFAULT_DATA_DIR, DEFAULT_CONFIG_FILENAME)
+DEFAULT_DOWNLOAD_ROOT = os.path.join(DEFAULT_DATA_DIR, DEFAULT_DOWNLOAD_DIRNAME)
 DEFAULT_HISTORY_DAYS = 365 * 5
 DEFAULT_POWER_BACKFILL_DAYS = 45
 DEFAULT_DIAGNOSTIC_WINDOW_DAYS = 2
@@ -115,11 +119,23 @@ def import_teslapy() -> Any:
     return teslapy
 
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(BASE_DIR)
-TEMPLATE_DIR = os.path.join(PROJECT_ROOT, "templates")
-STATIC_DIR = os.path.join(PROJECT_ROOT, "static")
+PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATE_DIR = os.path.join(PACKAGE_DIR, "templates")
+STATIC_DIR = os.path.join(PACKAGE_DIR, "static")
 INDEX_TEMPLATE_PATH = os.path.join(TEMPLATE_DIR, "index.html")
+
+
+def sibling_path_for_db_path(db_path: str, name: str) -> str:
+    db_dir = os.path.dirname(os.path.normpath(db_path))
+    return os.path.join(db_dir, name) if db_dir else name
+
+
+def default_config_path_for_db_path(db_path: str) -> str:
+    return sibling_path_for_db_path(db_path, DEFAULT_CONFIG_FILENAME)
+
+
+def default_download_root_for_db_path(db_path: str) -> str:
+    return sibling_path_for_db_path(db_path, DEFAULT_DOWNLOAD_DIRNAME)
 
 
 def read_text_file(path: str) -> str:

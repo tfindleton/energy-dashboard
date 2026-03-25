@@ -1,3 +1,5 @@
+.git/
+.github/
 __pycache__/
 *.pyc
 .venv/
@@ -7,3 +9,4 @@ tesla_auth.json.invalid-*
 tesla_solar.sqlite3
 *.sqlite3
 *.db
+/start-local.bat

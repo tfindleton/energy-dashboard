@@ -18,7 +18,7 @@ from .common import (
     ARCHIVE_IMPORT_SCHEMA_VERSION,
     DAY_COMPARE_DAILY_TOTAL_COLUMNS,
     DAY_COMPARE_METRICS,
-    DEFAULT_DOWNLOAD_ROOT,
+    default_download_root_for_db_path,
     DEFAULT_HISTORY_DAYS,
     DEFAULT_POWER_BACKFILL_DAYS,
     DEFAULT_TESLAPY_TIMEOUT,
@@ -181,8 +181,7 @@ class TeslaSolarDashboard:
     def __init__(self, db_path: str, config_path: str, download_root: Optional[str] = None) -> None:
         self.db_path = db_path
         self.config_path = config_path
-        base_dir = os.path.dirname(os.path.abspath(db_path)) or os.getcwd()
-        self.download_root = os.path.abspath(download_root or os.path.join(base_dir, DEFAULT_DOWNLOAD_ROOT))
+        self.download_root = os.path.abspath(download_root or default_download_root_for_db_path(db_path))
         self.sync_lock = threading.Lock()
         self.sync_progress_lock = threading.Lock()
         self.archive_refresh_lock = threading.Lock()
@@ -193,6 +192,7 @@ class TeslaSolarDashboard:
         self.auto_sync_next_run: Optional[str] = None
         self.auto_sync_site_id: Optional[str] = None
         self.config_warning = ""
+        self._last_sync_log_signature = ""
         self.sync_progress: Dict[str, Any] = {
             "active": False,
             "stage": "idle",
@@ -805,6 +805,8 @@ class TeslaSolarDashboard:
         if total_steps:
             current_steps = min(current_steps, total_steps)
         percent = round((current_steps / total_steps) * 100.0, 1) if total_steps else 0.0
+        signature = "|".join([stage, label, message, str(current_steps), str(total_steps), str(bool(active)), error])
+        should_log = False
         with self.sync_progress_lock:
             carry_started_at = self.sync_progress.get("started_at", "")
             self.sync_progress = {
@@ -822,6 +824,16 @@ class TeslaSolarDashboard:
                 "finished_at": finished_at or "",
                 "error": error,
             }
+            if signature != self._last_sync_log_signature:
+                self._last_sync_log_signature = signature
+                should_log = True
+        if should_log:
+            progress_suffix = f" [{current_steps}/{total_steps}, {percent:.1f}%]" if total_steps else ""
+            line = f"[sync:{stage}] {label}{progress_suffix} {message}".strip()
+            if stage == "error" or error:
+                print(line, file=sys.stderr, flush=True)
+            else:
+                print(line, flush=True)
 
     def sync_progress_payload(self) -> Dict[str, Any]:
         with self.sync_progress_lock:

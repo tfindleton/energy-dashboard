@@ -1,4 +1,6 @@
 import datetime as dt
+import os
+from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
@@ -19,6 +21,9 @@ from dashboard import (
     normalize_history_row,
     resolve_tzinfo,
 )
+from dashboard.cli import build_parser, migrate_legacy_storage_layout, resolve_runtime_paths
+from dashboard.common import DEFAULT_CONFIG_PATH, DEFAULT_DB_PATH, DEFAULT_DOWNLOAD_ROOT
+from dashboard.server import is_client_disconnect_error
 from dashboard.service import extract_installation_date, extract_site_name, extract_timezone
 
 
@@ -528,6 +533,58 @@ class CliTests(unittest.TestCase):
             normalize_cli_args(["sync", "--days-back", "30"]),
             ["sync", "--days-back", "30"],
         )
+
+    def test_default_runtime_paths_use_shared_data_directory(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            parser = build_parser()
+            args = parser.parse_args(["serve"])
+
+        db_path, config_path, download_root = resolve_runtime_paths(args)
+
+        self.assertEqual(db_path, DEFAULT_DB_PATH)
+        self.assertEqual(config_path, DEFAULT_CONFIG_PATH)
+        self.assertEqual(download_root, DEFAULT_DOWNLOAD_ROOT)
+
+    def test_config_and_download_root_follow_custom_db_directory(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            parser = build_parser()
+            args = parser.parse_args(["--db", os.path.join("custom", "store.sqlite3"), "serve"])
+
+        db_path, config_path, download_root = resolve_runtime_paths(args)
+
+        self.assertEqual(db_path, os.path.join("custom", "store.sqlite3"))
+        self.assertEqual(config_path, os.path.join("custom", "tesla_auth.json"))
+        self.assertEqual(download_root, os.path.join("custom", "download"))
+
+    def test_legacy_default_storage_is_migrated_into_data_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            previous_cwd = os.getcwd()
+            os.chdir(tempdir)
+            try:
+                Path("tesla_solar.sqlite3").write_text("db")
+                Path("tesla_auth.json").write_text("auth")
+                Path("download").mkdir()
+                Path("download/marker.txt").write_text("archive")
+
+                messages = migrate_legacy_storage_layout(DEFAULT_DB_PATH, DEFAULT_CONFIG_PATH, DEFAULT_DOWNLOAD_ROOT)
+
+                self.assertEqual(len(messages), 3)
+                self.assertTrue(Path(DEFAULT_DB_PATH).exists())
+                self.assertTrue(Path(DEFAULT_CONFIG_PATH).exists())
+                self.assertTrue(Path(DEFAULT_DOWNLOAD_ROOT, "marker.txt").exists())
+                self.assertFalse(Path("tesla_solar.sqlite3").exists())
+                self.assertFalse(Path("tesla_auth.json").exists())
+                self.assertFalse(Path("download").exists())
+            finally:
+                os.chdir(previous_cwd)
+
+
+class ServerTests(unittest.TestCase):
+    def test_client_disconnect_errors_are_detected(self) -> None:
+        self.assertTrue(is_client_disconnect_error(BrokenPipeError()))
+        self.assertTrue(is_client_disconnect_error(ConnectionAbortedError()))
+        self.assertTrue(is_client_disconnect_error(ConnectionResetError()))
+        self.assertFalse(is_client_disconnect_error(RuntimeError("boom")))
 
 
 class CsvArchiveTests(unittest.TestCase):

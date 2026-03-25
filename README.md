@@ -1,6 +1,6 @@
 # Energy Dashboard
 
-Self-hosted Python dashboard for Tesla home energy / Powerwall history.
+Energy Dashboard is a self-hosted web app for Tesla home energy and Powerwall data. Docker is the recommended setup path, and a local Python workflow is also available if you prefer to run it directly on your host.
 
 It uses the same local-browser Tesla sign-in pattern as `netzero-labs/tesla-solar-download`:
 
@@ -10,59 +10,35 @@ It uses the same local-browser Tesla sign-in pattern as `netzero-labs/tesla-sola
 - the final Tesla URL is pasted back into the app once
 - the Tesla session is cached locally for future syncs
 
-This project is standalone. It does not shell out to `tesla-solar-download` to fetch data. It uses
-TeslaPy directly inside this app, but it can also reuse an existing `tesla-solar-download` archive by
-pointing `--download-root` at that folder.
-
-The app keeps two local data stores:
-
-- monthly Tesla energy CSV files as the durable backup/archive
-- SQLite as the fast query cache for charts
-
-Each sync reuses existing finalized CSV files, refreshes only the current partial month, and then imports those CSVs into SQLite.
+This project is standalone. It does not shell out to `tesla-solar-download`, but it can reuse an existing archive by pointing `--download-root` at that folder.
 
 ## Features
 
-- Flat dark local web UI
-- Compare same day across years
-- Compare same ISO week across years
-- Compare same month across years
-- Compare year-to-date across years
-- Custom day / week / month trend charts
+- Flat local web UI for Tesla energy history
+- Compare same day, ISO week, month, and year-to-date across years
+- Trend, diagnostics, insight, and day-compare views
 - Manual sync plus scheduled background sync
 - CSV-first archive model with SQLite cache
-- Container-friendly persistent storage
+- Container-friendly persistent storage under a single data mount
 
-## Install
+## Docker Quick Start
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-Optional package install:
+Build the image:
 
 ```bash
-pip install .
-tesla-energy-dashboard
+docker build -t energy-dashboard .
 ```
 
-## Run
-
-Start the local dashboard:
+Run it with a persistent data volume:
 
 ```bash
-python3 app.py
+docker run -d \
+  --name energy-dashboard \
+  --restart unless-stopped \
+  -p 8000:8000 \
+  -v energy-dashboard-data:/data \
+  energy-dashboard
 ```
-
-That defaults to:
-
-- `serve`
-- `0.0.0.0:8000`
-- if already signed in, the web UI starts first and the initial sync runs in the background
-- daily auto-sync at `1:00 AM` local server time
 
 Open:
 
@@ -70,11 +46,60 @@ Open:
 http://127.0.0.1:8000/
 ```
 
-The Python code is now split into a small package under `dashboard/`, with `app.py` kept as the thin entrypoint for local runs and `pip install .`.
+The container keeps all runtime state under `/data`:
+
+- `/data/dashboard.sqlite3`
+- `/data/tesla_auth.json`
+- `/data/download`
+
+That auth JSON contains your Tesla session cache. Keep the mounted volume private and out of source control. The default ignore rules in this repo already exclude the local auth file, database, and download archive.
+
+## Docker Configuration
+
+Container defaults:
+
+- port `8000`
+- daily sync at `1:00 AM`
+- `1825` day initial/backfill window
+- DB path `/data/dashboard.sqlite3`
+- auth config `/data/tesla_auth.json`
+- archive root `/data/download`
+
+Path overrides currently use the older `SOLAR_DASHBOARD_*` variable names. Use these exact names:
+
+- `SOLAR_DASHBOARD_DB`
+- `SOLAR_DASHBOARD_CONFIG`
+- `SOLAR_DASHBOARD_DOWNLOAD_ROOT`
+
+Other common environment variables:
+
+- `TESLA_EMAIL`
+- `TESLA_ENERGY_SITE_ID`
+- `TESLA_TIME_ZONE`
+- `PORT`
+- `SYNC_DAYS_BACK`
+- `SYNC_INTERVAL_MINUTES`
+- `SYNC_DAILY_TIME`
+
+Example with overrides:
+
+```bash
+docker run -d \
+  --name energy-dashboard \
+  --restart unless-stopped \
+  -p 8080:8000 \
+  -e TESLA_EMAIL=you@example.com \
+  -e TESLA_ENERGY_SITE_ID=1234567890 \
+  -e SYNC_DAILY_TIME=03:30 \
+  -v "$PWD/data:/data" \
+  energy-dashboard
+```
+
+The image also works with Podman. If your host uses SELinux, add a relabel suffix such as `:Z` to the `/data` mount.
 
 ## Sign In
 
-The app uses a guided TeslaPy local browser flow, similar to `tesla-solar-download`.
+The app uses a guided TeslaPy local browser flow:
 
 1. Enter your Tesla account email in the page.
 2. Click `Start Sign In`.
@@ -84,157 +109,65 @@ The app uses a guided TeslaPy local browser flow, similar to `tesla-solar-downlo
 6. Paste it into the app and click `Finish Sign In`.
 7. Click `Sync Data`.
 
-After that, the cached Tesla session is reused for scheduled/manual syncs until it expires or you sign out.
+After that, the cached Tesla session is reused for scheduled and manual syncs until it expires or you sign out.
 
-## Sync Model
+## Data Storage
 
-The dashboard currently archives Tesla monthly energy history because that is the source needed for the existing comparison and trend charts.
+The app keeps raw CSV files as the durable archive and SQLite as the fast query cache for charts.
 
 Files are stored like this:
 
 ```text
 download/<site_id>/energy/YYYY-MM.csv
 download/<site_id>/energy/YYYY-MM.partial.csv
+download/<site_id>/power/YYYY-MM-DD.csv
+download/<site_id>/power/YYYY-MM-DD.partial.csv
 ```
 
 Behavior:
 
-- finalized months are downloaded once and then reused
-- the current month is always refreshed as `.partial.csv`
-- SQLite is upserted from those CSV files after each sync
-- the raw CSV archive remains available as a backup
+- finalized monthly energy files are downloaded once and then reused
+- the current month is refreshed as `.partial.csv`
+- recent intraday power files are cached by day
+- the current day is refreshed as `.partial.csv`
+- SQLite is upserted from the local CSV archive after each sync
 - existing archives already under `download/` are imported automatically
 
-Default local file locations:
+## Local Python
 
-- SQLite: `./tesla_solar.sqlite3`
-- Auth/session cache: `./tesla_auth.json`
-- CSV archive: `./download`
+Local Python is still supported for development or direct host runs, but it is secondary to the container workflow.
 
-## CLI
-
-Print a Tesla sign-in URL:
+Install:
 
 ```bash
-python3 app.py auth-start --email you@example.com
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
 ```
 
-Open that URL automatically:
+Run the dashboard from the repo root:
 
 ```bash
-python3 app.py auth-start --email you@example.com --open-browser
+python3 -m dashboard
 ```
 
-Finish sign-in from the final Tesla URL:
+By default, local runs keep runtime state under `data/`:
+
+- `data/dashboard.sqlite3`
+- `data/tesla_auth.json`
+- `data/download`
+
+If you install the package, use the current console command `tesla-energy-dashboard`.
+
+That defaults to `serve` on `0.0.0.0:8000`, starts the web UI immediately, and runs scheduled syncs with the same defaults used by the container. The server does not open a browser unless you explicitly pass `--open-browser`, so container runs stay headless by default.
+
+Useful local commands:
 
 ```bash
-python3 app.py auth-finish --url "https://auth.tesla.com/void/callback?code=..."
+python3 -m dashboard auth-start --email you@example.com
+python3 -m dashboard auth-finish --url "https://auth.tesla.com/void/callback?code=..."
+python3 -m dashboard sync --days-back 1825
+python3 -m dashboard serve --daily-sync-time off --sync-interval-minutes 0
+python3 -m dashboard --download-root "/path/to/existing/download" serve
 ```
-
-Run a one-off sync:
-
-```bash
-python3 app.py sync --days-back 1825
-```
-
-Use a custom CSV archive directory:
-
-```bash
-python3 app.py --download-root ./download serve
-```
-
-Serve with a different sync cadence:
-
-```bash
-python3 app.py serve --sync-interval-minutes 30
-python3 app.py serve --daily-sync-time off --sync-interval-minutes 0
-```
-
-To reuse CSVs that another `tesla-solar-download` run is already producing:
-
-```bash
-python3 app.py --download-root "/path/to/existing/download" serve
-```
-
-## Environment Variables
-
-- `TESLA_EMAIL`
-- `TESLA_ENERGY_SITE_ID`
-- `TESLA_TIME_ZONE`
-- `PORT`
-- `SYNC_DAYS_BACK`
-- `SYNC_INTERVAL_MINUTES`
-- `SYNC_DAILY_TIME`
-- `SOLAR_DASHBOARD_DB`
-- `SOLAR_DASHBOARD_CONFIG`
-- `SOLAR_DASHBOARD_DOWNLOAD_ROOT`
-
-## Containers
-
-The included image definition works with both Docker and Podman.
-
-Build with Docker:
-
-```bash
-docker build -t tesla-energy-dashboard .
-```
-
-Build with Podman:
-
-```bash
-podman build -t tesla-energy-dashboard .
-```
-
-Run with Docker:
-
-```bash
-docker run -d \
-  --name tesla-energy-dashboard \
-  -p 8000:8000 \
-  -v tesla-solar-data:/data \
-  tesla-energy-dashboard
-```
-
-Run with Podman:
-
-```bash
-podman run -d \
-  --name tesla-energy-dashboard \
-  -p 8000:8000 \
-  -v tesla-solar-data:/data \
-  tesla-energy-dashboard
-```
-
-The container persists:
-
-- `/data/tesla_solar.sqlite3`
-- `/data/tesla_auth.json`
-- `/data/download`
-
-Container defaults:
-
-- port `8000`
-- daily sync at `1:00 AM`
-- `1825` day initial/backfill window
-
-If your host uses SELinux, you may need to add a relabel suffix such as `:Z` to the `/data` mount when using Podman.
-
-## Testing
-
-```bash
-python3 -m py_compile app.py dashboard/*.py tests/test_dashboard.py
-python3 -m unittest -q
-```
-
-## Notes
-
-- This app now depends on `teslapy`.
-- The sign-in/session model is local and homelab-friendly, but it is based on TeslaPy and the same general approach used by `tesla-solar-download`, not Tesla Fleet API onboarding.
-- Tokens and cached auth should stay out of version control.
-
-## Attribution
-
-This project builds on the work of other Tesla community projects and should not be presented as inventing those pieces from scratch.
-
-- [`TeslaPy`](https://github.com/tdorssers/TeslaPy) by `tdorssers` is the Python Tesla API library this app uses directly for local sign-in/session handling and Tesla data access.
-- [`tesla-solar-download`](https://github.com/netzero-labs/tesla-solar-download) by `netzero-labs` was a major reference for the local-browser sign-in flow, CSV archive approach, and the homelab-friendly Tesla energy download pattern used here.

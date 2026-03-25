@@ -3,9 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
-import threading
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Tuple
 
 from .common import (
     DEFAULT_CONFIG_PATH,
@@ -15,9 +15,16 @@ from .common import (
     DEFAULT_HISTORY_DAYS,
     DEFAULT_SERVE_HOST,
     DEFAULT_SYNC_INTERVAL_MINUTES,
+    default_config_path_for_db_path,
+    default_download_root_for_db_path,
 )
 from .server import run_server
 from .service import TeslaSolarDashboard
+
+LEGACY_DB_FILENAME = "tesla_solar.sqlite3"
+LEGACY_CONFIG_PATH = "tesla_auth.json"
+LEGACY_DOWNLOAD_ROOT = "download"
+
 
 def normalize_cli_args(argv: Sequence[str]) -> List[str]:
     args = list(argv)
@@ -52,19 +59,29 @@ def normalize_cli_args(argv: Sequence[str]) -> List[str]:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    db_default = os.environ.get("SOLAR_DASHBOARD_DB", DEFAULT_DB_PATH)
+    config_default = os.environ.get("SOLAR_DASHBOARD_CONFIG")
+    download_root_default = os.environ.get("SOLAR_DASHBOARD_DOWNLOAD_ROOT")
+
     parser = argparse.ArgumentParser(
         description="Sync Tesla energy history locally and serve a comparison dashboard."
     )
-    parser.add_argument("--db", default=DEFAULT_DB_PATH, help=f"SQLite database path (default: {DEFAULT_DB_PATH})")
+    parser.add_argument("--db", default=db_default, help=f"SQLite database path (default: {db_default})")
     parser.add_argument(
         "--config",
-        default=DEFAULT_CONFIG_PATH,
-        help=f"Auth config JSON path (default: {DEFAULT_CONFIG_PATH})",
+        default=config_default,
+        help=(
+            f"Auth config JSON path (default: {config_default or DEFAULT_CONFIG_PATH}; "
+            "when omitted, it stays alongside the DB path)"
+        ),
     )
     parser.add_argument(
         "--download-root",
-        default=os.environ.get("SOLAR_DASHBOARD_DOWNLOAD_ROOT", DEFAULT_DOWNLOAD_ROOT),
-        help=f"Directory for archived Tesla CSV files (default: {DEFAULT_DOWNLOAD_ROOT})",
+        default=download_root_default,
+        help=(
+            f"Directory for archived Tesla CSV files (default: {download_root_default or DEFAULT_DOWNLOAD_ROOT}; "
+            "when omitted, it stays alongside the DB path)"
+        ),
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -108,12 +125,61 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def resolve_runtime_paths(args: argparse.Namespace) -> Tuple[str, str, str]:
+    db_path = args.db
+    config_path = args.config or default_config_path_for_db_path(db_path)
+    download_root = args.download_root or default_download_root_for_db_path(db_path)
+    return db_path, config_path, download_root
+
+
+def _move_path_if_missing(source_path: str, target_path: str) -> Optional[str]:
+    if not source_path or os.path.normpath(source_path) == os.path.normpath(target_path):
+        return None
+    if not os.path.exists(source_path) or os.path.exists(target_path):
+        return None
+    target_parent = os.path.dirname(target_path)
+    if target_parent:
+        os.makedirs(target_parent, exist_ok=True)
+    shutil.move(source_path, target_path)
+    return f"Migrated {source_path} -> {target_path}"
+
+
+def migrate_legacy_storage_layout(db_path: str, config_path: str, download_root: str) -> List[str]:
+    messages: List[str] = []
+
+    db_candidates = [os.path.join(os.path.dirname(os.path.normpath(db_path)), LEGACY_DB_FILENAME)]
+    if os.path.normpath(db_path) == os.path.normpath(DEFAULT_DB_PATH):
+        db_candidates.append(LEGACY_DB_FILENAME)
+    for candidate in dict.fromkeys(db_candidates):
+        moved = _move_path_if_missing(candidate, db_path)
+        if moved:
+            messages.append(moved)
+            break
+
+    if os.path.normpath(config_path) == os.path.normpath(DEFAULT_CONFIG_PATH):
+        moved = _move_path_if_missing(LEGACY_CONFIG_PATH, config_path)
+        if moved:
+            messages.append(moved)
+
+    if os.path.normpath(download_root) == os.path.normpath(DEFAULT_DOWNLOAD_ROOT):
+        moved = _move_path_if_missing(LEGACY_DOWNLOAD_ROOT, download_root)
+        if moved:
+            messages.append(moved)
+
+    return messages
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     raw_args = list(argv) if argv is not None else sys.argv[1:]
     args = parser.parse_args(normalize_cli_args(raw_args))
     command = args.command
-    app = TeslaSolarDashboard(db_path=args.db, config_path=args.config, download_root=args.download_root)
+    db_path, config_path, download_root = resolve_runtime_paths(args)
+
+    for message in migrate_legacy_storage_layout(db_path, config_path, download_root):
+        print(message)
+
+    app = TeslaSolarDashboard(db_path=db_path, config_path=config_path, download_root=download_root)
 
     if command == "auth-start":
         payload = app.start_web_login({"email": args.email})

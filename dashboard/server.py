@@ -23,6 +23,13 @@ from .common import (
 )
 from .service import TeslaSolarDashboard
 
+CLIENT_DISCONNECT_ERRORS = (BrokenPipeError, ConnectionAbortedError, ConnectionResetError)
+
+
+def is_client_disconnect_error(error: BaseException) -> bool:
+    return isinstance(error, CLIENT_DISCONNECT_ERRORS)
+
+
 class BackgroundSyncWorker:
     def __init__(
         self,
@@ -189,30 +196,26 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except Exception as error:  # pragma: no cover - exercised manually
             self.respond_json({"error": str(error)}, status=HTTPStatus.BAD_REQUEST)
 
+    def _write_response(self, payload: bytes, content_type: str, status: HTTPStatus = HTTPStatus.OK) -> None:
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+        except CLIENT_DISCONNECT_ERRORS:
+            return
+
     def respond_html(self, content: str) -> None:
-        encoded = content.encode("utf-8")
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(encoded)))
-        self.end_headers()
-        self.wfile.write(encoded)
+        self._write_response(content.encode("utf-8"), "text/html; charset=utf-8")
 
     def respond_file(self, path: str) -> None:
         with open(path, "rb") as handle:
             payload = handle.read()
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", guess_content_type(path))
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
+        self._write_response(payload, guess_content_type(path))
 
     def respond_json(self, payload: Any, status: HTTPStatus = HTTPStatus.OK) -> None:
-        encoded = json.dumps(payload).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(encoded)))
-        self.end_headers()
-        self.wfile.write(encoded)
+        self._write_response(json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8", status)
 
     def read_json_body(self) -> Dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0"))
@@ -274,7 +277,9 @@ def run_server(
                 time.sleep(0.5)
                 if app.auth_configured():
                     print("Initial sync starting in background.", flush=True)
+                    print("Initial sync task: checking local archive, downloading missing Tesla data, and importing into SQLite.", flush=True)
                     result = app.sync(days_back=days_back, requested_site_id=site_id)
+                    print("Initial sync completed successfully.", flush=True)
                     print(json.dumps(result, indent=2), flush=True)
                 elif app.auth_login_ready():
                     print("Initial sync skipped: sign in with Tesla first.", file=sys.stderr, flush=True)

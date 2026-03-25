@@ -38,13 +38,20 @@ const CHART_COLORS = {
   axis: "rgba(149, 161, 178, 0.32)"
 };
 
+const DEFAULT_CHART_VIEW = "diagnostics";
+const VALID_CHART_VIEWS = new Set(["diagnostics", "daycompare", "performance", "comparison", "pattern", "trend"]);
+
 const PREFERENCE_KEYS = {
-  dayCompareYMax: "teslaSolar.dayCompareYMax"
+  dayCompareYMax: "teslaSolar.dayCompareYMax",
+  panelCollapsedPrefix: "energyDashboard.panelCollapsed",
+  insightCollapsedPrefix: "energyDashboard.insightCollapsed",
+  signInExpanded: "energyDashboard.signInExpanded",
+  chartView: "energyDashboard.chartView"
 };
 
 const state = {
   status: null,
-  chartView: "diagnostics",
+  chartView: DEFAULT_CHART_VIEW,
   dayComparePayload: null,
   dayCompareDates: [],
   dayCompareInitialized: false,
@@ -60,13 +67,60 @@ const state = {
   revealEmail: false,
   syncPollTimer: null,
   syncRequestActive: false,
-  resizeTimer: null
+  resizeTimer: null,
+  bootstrapping: true
 };
 
 let chartTooltipNode = null;
 
 function $(id) {
   return document.getElementById(id);
+}
+
+function showBootOverlay(title, message) {
+  const overlay = $("bootOverlay");
+  if (!overlay) {
+    return;
+  }
+  $("bootTitle").textContent = title || "Loading dashboard";
+  $("bootMessage").textContent = message || "Checking local status and preparing your views.";
+  overlay.hidden = false;
+  document.body.classList.add("boot-loading");
+}
+
+function hideBootOverlay() {
+  const overlay = $("bootOverlay");
+  if (!overlay) {
+    return;
+  }
+  overlay.hidden = true;
+  document.body.classList.remove("boot-loading");
+}
+
+function updateBootOverlayForStatus(status) {
+  if (!state.bootstrapping) {
+    return;
+  }
+  if (status.sync_in_progress) {
+    showBootOverlay(
+      "Loading dashboard",
+      status.sync_progress?.message || "Initial sync is running in the background while the dashboard prepares local data."
+    );
+    return;
+  }
+  if ((status.sites || []).length) {
+    showBootOverlay("Loading charts", "Preparing summaries, insights, and chart views from the local cache.");
+    return;
+  }
+  if (status.auth_configured) {
+    showBootOverlay("Loading dashboard", "Tesla is connected. Checking local data availability and sync state.");
+    return;
+  }
+  if (status.auth_pending || (status.config?.email || "").trim()) {
+    showBootOverlay("Loading dashboard", "Restoring your Tesla sign-in setup and local dashboard state.");
+    return;
+  }
+  showBootOverlay("Loading dashboard", "Checking local status and preparing your views.");
 }
 
 function loadPreference(key, fallback = "") {
@@ -87,6 +141,149 @@ function savePreference(key, value) {
   } catch (error) {
     // Ignore storage errors and keep the page functional.
   }
+}
+
+function setSignInExpanded(expanded, options = {}) {
+  state.signInExpanded = Boolean(expanded);
+  if (options.persist !== false) {
+    savePreference(PREFERENCE_KEYS.signInExpanded, state.signInExpanded ? "1" : "0");
+  }
+}
+
+function normalizedStorageToken(value, fallback) {
+  return String(value || fallback || "section")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || fallback || "section";
+}
+
+function panelStorageKey(panel, fallbackIndex = 0) {
+  const titleNode = panel.querySelector(":scope > .panel-header .panel-title") || panel.querySelector(":scope > .panel-title");
+  const raw = panel.id || panel.dataset.panelKey || titleNode?.textContent;
+  return `${PREFERENCE_KEYS.panelCollapsedPrefix}.${normalizedStorageToken(raw, `panel-${fallbackIndex + 1}`)}`;
+}
+
+function insightStorageKey(group, fallbackIndex = 0) {
+  const scope = group.closest(".insight-sections")?.id || group.dataset.groupScope || "sections";
+  return `${PREFERENCE_KEYS.insightCollapsedPrefix}.${normalizedStorageToken(scope, "sections")}.${normalizedStorageToken(group.dataset.groupKey, `group-${fallbackIndex + 1}`)}`;
+}
+
+function updatePanelToggleButton(button, collapsed) {
+  button.innerHTML = '<span class="panel-toggle-glyph" aria-hidden="true"></span>';
+  button.classList.toggle("is-collapsed", collapsed);
+  button.setAttribute("aria-expanded", String(!collapsed));
+  button.setAttribute("aria-label", collapsed ? "Expand section" : "Collapse section");
+  button.title = collapsed ? "Expand section" : "Collapse section";
+}
+
+function wireToggleHitbox(node, toggle) {
+  if (!node || node.dataset.toggleBound === "1") {
+    return;
+  }
+  node.dataset.toggleBound = "1";
+  node.classList.add("panel-toggle-hitbox");
+  node.setAttribute("role", "button");
+  node.setAttribute("tabindex", "0");
+  node.addEventListener("click", (event) => {
+    if (event.target instanceof Element && event.target.closest(".panel-toggle")) {
+      return;
+    }
+    toggle();
+  });
+  node.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggle();
+    }
+  });
+}
+
+function setPanelCollapsed(panel, collapsed, options = {}) {
+  panel.classList.toggle("panel-collapsed", collapsed);
+  const button = panel.querySelector(":scope > .panel-toggle");
+  if (button) {
+    updatePanelToggleButton(button, collapsed);
+  }
+  const trigger = panel.querySelector(":scope > .panel-header") || panel.querySelector(":scope > .panel-title");
+  if (trigger) {
+    trigger.setAttribute("aria-expanded", String(!collapsed));
+  }
+  if (options.persist !== false) {
+    savePreference(panelStorageKey(panel), collapsed ? "1" : "0");
+  }
+  if (!collapsed) {
+    window.requestAnimationFrame(() => rerenderChartsFromCache());
+  }
+}
+
+function updateInsightToggleButton(button, collapsed) {
+  button.classList.toggle("is-collapsed", collapsed);
+  button.setAttribute("aria-expanded", String(!collapsed));
+  button.setAttribute("aria-label", collapsed ? "Expand section" : "Collapse section");
+  button.title = collapsed ? "Expand section" : "Collapse section";
+}
+
+function setInsightGroupCollapsed(group, collapsed, options = {}) {
+  group.classList.toggle("insight-group-collapsed", collapsed);
+  const button = group.querySelector(":scope > .subsection-toggle");
+  if (button) {
+    updateInsightToggleButton(button, collapsed);
+  }
+  if (options.persist !== false) {
+    savePreference(insightStorageKey(group), collapsed ? "1" : "0");
+  }
+}
+
+function initializeInsightGroupToggles(containerId) {
+  const root = $(containerId);
+  if (!root) {
+    return;
+  }
+  root.querySelectorAll(".insight-group[data-group-key]").forEach((group, index) => {
+    const button = group.querySelector(":scope > .subsection-toggle");
+    if (!button) {
+      return;
+    }
+    const saved = loadPreference(insightStorageKey(group, index), "");
+    setInsightGroupCollapsed(group, saved === "1", { persist: false });
+    if (button.dataset.toggleBound === "1") {
+      return;
+    }
+    button.dataset.toggleBound = "1";
+    button.addEventListener("click", () => {
+      const collapsed = !group.classList.contains("insight-group-collapsed");
+      setInsightGroupCollapsed(group, collapsed);
+    });
+  });
+}
+
+function initializeCollapsiblePanels() {
+  document.querySelectorAll("main > .panel").forEach((panel, index) => {
+    panel.classList.add("collapsible-panel");
+    if (!panel.id) {
+      panel.dataset.panelKey = `panel-${index + 1}`;
+    }
+    const toggle = () => {
+      const collapsed = !panel.classList.contains("panel-collapsed");
+      setPanelCollapsed(panel, collapsed);
+    };
+    let button = panel.querySelector(":scope > .panel-toggle");
+    if (!button) {
+      button = document.createElement("button");
+      button.type = "button";
+      button.className = "panel-toggle";
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        toggle();
+      });
+      panel.appendChild(button);
+    }
+    const trigger = panel.querySelector(":scope > .panel-header") || panel.querySelector(":scope > .panel-title");
+    wireToggleHitbox(trigger, toggle);
+    const saved = loadPreference(panelStorageKey(panel, index), "");
+    setPanelCollapsed(panel, saved === "1", { persist: false });
+  });
 }
 
 function escapeHtml(value) {
@@ -378,7 +575,9 @@ function updateSignInPanel(status) {
   accountPanel.hidden = !state.signInExpanded;
   revealButton.hidden = state.revealEmail;
   hideButton.hidden = !state.revealEmail;
-  $("toggleSignInPanelButton").textContent = state.signInExpanded ? "Hide Sign-In" : "Manage Sign-In";
+  const toggleButton = $("toggleSignInPanelButton");
+  toggleButton.textContent = state.signInExpanded ? "Hide Sign-In" : "Manage Sign-In";
+  toggleButton.setAttribute("aria-expanded", String(state.signInExpanded));
 }
 
 function updateWizard(status) {
@@ -970,8 +1169,12 @@ function setPerformanceScope(scope) {
   });
 }
 
-function setChartView(view) {
-  state.chartView = view || "performance";
+function setChartView(view, options = {}) {
+  const nextView = VALID_CHART_VIEWS.has(view) ? view : DEFAULT_CHART_VIEW;
+  state.chartView = nextView;
+  if (options.persist !== false) {
+    savePreference(PREFERENCE_KEYS.chartView, nextView);
+  }
   document.querySelectorAll(".chart-tab").forEach((button) => {
     button.classList.toggle("active", button.dataset.chartView === state.chartView);
   });
@@ -1115,19 +1318,25 @@ function renderInsights(payload) {
 
   meta.textContent = payload.summary || "";
   container.innerHTML = payload.sections.map((section) => `
-    <section class="insight-group">
-      <h3 class="insight-group-title">${escapeHtml(section.title || "")}</h3>
-      <div class="insight-grid">
-        ${(section.items || []).map((item) => `
-          <article class="insight-card ${escapeHtml(section.accent || "")} ${escapeHtml(item.tone || "")}">
-            <div class="insight-label">${escapeHtml(item.label || "")}</div>
-            <div class="insight-value">${escapeHtml(formatSignalValue(item.value, item.kind || "energy"))}</div>
-            <div class="insight-hint">${escapeHtml(item.hint || "")}</div>
-          </article>
-        `).join("")}
+    <section class="insight-group" data-group-key="${escapeHtml(section.title || "")}">
+      <button type="button" class="subsection-toggle">
+        <span class="subsection-toggle-title">${escapeHtml(section.title || "")}</span>
+        <span class="subsection-toggle-icon" aria-hidden="true"></span>
+      </button>
+      <div class="subsection-body">
+        <div class="insight-grid">
+          ${(section.items || []).map((item) => `
+            <article class="insight-card ${escapeHtml(section.accent || "")} ${escapeHtml(item.tone || "")}">
+              <div class="insight-label">${escapeHtml(item.label || "")}</div>
+              <div class="insight-value">${escapeHtml(formatSignalValue(item.value, item.kind || "energy"))}</div>
+              <div class="insight-hint">${escapeHtml(item.hint || "")}</div>
+            </article>
+          `).join("")}
+        </div>
       </div>
     </section>
   `).join("");
+  initializeInsightGroupToggles("insightsSections");
 }
 
 function renderDiagnostics(payload) {
@@ -1158,19 +1367,25 @@ function renderDiagnostics(payload) {
   `).join("");
 
   sectionsNode.innerHTML = payload.sections.map((section) => `
-    <section class="insight-group">
-      <h3 class="insight-group-title">${escapeHtml(section.title || "")}</h3>
-      <div class="insight-grid">
-        ${(section.items || []).map((item) => `
-          <article class="insight-card ${escapeHtml(section.accent || "")} ${escapeHtml(item.tone || "")}">
-            <div class="insight-label">${escapeHtml(item.label || "")}</div>
-            <div class="insight-value">${escapeHtml(formatSignalValue(item.value, item.kind || "energy"))}</div>
-            <div class="insight-hint">${escapeHtml(item.hint || "")}</div>
-          </article>
-        `).join("")}
+    <section class="insight-group" data-group-key="${escapeHtml(section.title || "")}">
+      <button type="button" class="subsection-toggle">
+        <span class="subsection-toggle-title">${escapeHtml(section.title || "")}</span>
+        <span class="subsection-toggle-icon" aria-hidden="true"></span>
+      </button>
+      <div class="subsection-body">
+        <div class="insight-grid">
+          ${(section.items || []).map((item) => `
+            <article class="insight-card ${escapeHtml(section.accent || "")} ${escapeHtml(item.tone || "")}">
+              <div class="insight-label">${escapeHtml(item.label || "")}</div>
+              <div class="insight-value">${escapeHtml(formatSignalValue(item.value, item.kind || "energy"))}</div>
+              <div class="insight-hint">${escapeHtml(item.hint || "")}</div>
+            </article>
+          `).join("")}
+        </div>
       </div>
     </section>
   `).join("");
+  initializeInsightGroupToggles("diagnosticsSections");
 
   tablesNode.innerHTML = (payload.tables || []).map((table) => `
     <details class="table-panel">
@@ -1615,6 +1830,7 @@ function renderDayCompareHighlights(payload) {
 async function loadStatus() {
   const status = await fetchJson("/api/status");
   state.status = status;
+  updateBootOverlayForStatus(status);
   populateSites(status);
   hydrateSetupForm(status);
   renderSummary(status);
@@ -1937,7 +2153,7 @@ async function finishTeslaLogin() {
     });
     setGeneratedAuthUrl("");
     $("authorizationResponse").value = "";
-    state.signInExpanded = false;
+    setSignInExpanded(false);
     state.revealEmail = false;
     setSetupStatus("Tesla sign-in completed.", "good");
     await loadStatus();
@@ -1963,7 +2179,7 @@ async function logoutTesla(event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({})
     });
-    state.signInExpanded = true;
+    setSignInExpanded(true);
     state.revealEmail = false;
     setGeneratedAuthUrl("");
     $("authorizationResponse").value = "";
@@ -1984,7 +2200,7 @@ function toggleSignInPanel() {
   if (state.signInExpanded) {
     state.revealEmail = false;
   }
-  state.signInExpanded = !state.signInExpanded;
+  setSignInExpanded(!state.signInExpanded);
   if (state.status) {
     updateSignInPanel(state.status);
   }
@@ -2102,12 +2318,32 @@ async function loadTrend() {
   renderTable("trendTable", payload.rows);
 }
 
-async function safeReloadAll() {
+async function safeReloadAll(options = {}) {
+  const initialLoad = Boolean(options.initialLoad);
+  if (initialLoad) {
+    state.bootstrapping = true;
+    showBootOverlay("Loading dashboard", "Checking local status and preparing your views.");
+  }
   try {
-    await loadStatus();
+    const status = await loadStatus();
+    if (initialLoad) {
+      if ((status.sites || []).length) {
+        showBootOverlay(
+          "Loading charts",
+          status.sync_in_progress
+            ? "Initial sync is running in the background while charts and summaries load from local data."
+            : "Preparing summaries, insights, and chart views from the local cache."
+        );
+      }
+    }
     await reloadDataViews();
   } catch (error) {
     setStatus(error.message, "error");
+  } finally {
+    if (initialLoad) {
+      state.bootstrapping = false;
+      hideBootOverlay();
+    }
   }
 }
 
@@ -2280,7 +2516,9 @@ buildComparisonMetricPills();
 buildPatternMetricPills();
 buildDayCompareMetricPills();
 $("dayCompareYMax").value = loadPreference(PREFERENCE_KEYS.dayCompareYMax, "");
+setSignInExpanded(loadPreference(PREFERENCE_KEYS.signInExpanded, "0") === "1", { persist: false });
 setPerformanceScope(state.performanceScope);
-setChartView(state.chartView);
+setChartView(loadPreference(PREFERENCE_KEYS.chartView, state.chartView), { persist: false });
+initializeCollapsiblePanels();
 wireEvents();
-safeReloadAll();
+safeReloadAll({ initialLoad: true });
