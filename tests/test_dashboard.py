@@ -509,8 +509,6 @@ class CliTests(unittest.TestCase):
                 [
                     "--db",
                     "custom.sqlite3",
-                    "--download-root",
-                    "archive",
                     "--port",
                     "9000",
                     "--no-sync-on-start",
@@ -519,8 +517,6 @@ class CliTests(unittest.TestCase):
             [
                 "--db",
                 "custom.sqlite3",
-                "--download-root",
-                "archive",
                 "serve",
                 "--port",
                 "9000",
@@ -572,6 +568,32 @@ class CliTests(unittest.TestCase):
                 self.assertTrue(Path(DEFAULT_DB_PATH).exists())
                 self.assertTrue(Path(DEFAULT_CONFIG_PATH).exists())
                 self.assertTrue(Path(DEFAULT_DOWNLOAD_ROOT, "marker.txt").exists())
+                self.assertFalse(Path("tesla_solar.sqlite3").exists())
+                self.assertFalse(Path("tesla_auth.json").exists())
+                self.assertFalse(Path("download").exists())
+            finally:
+                os.chdir(previous_cwd)
+
+    def test_legacy_root_storage_moves_next_to_custom_db(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            previous_cwd = os.getcwd()
+            os.chdir(tempdir)
+            try:
+                Path("tesla_solar.sqlite3").write_text("db")
+                Path("tesla_auth.json").write_text("auth")
+                Path("download").mkdir()
+                Path("download/marker.txt").write_text("archive")
+
+                db_path = os.path.join("custom", "store.sqlite3")
+                config_path = os.path.join("custom", "tesla_auth.json")
+                download_root = os.path.join("custom", "download")
+
+                messages = migrate_legacy_storage_layout(db_path, config_path, download_root)
+
+                self.assertEqual(len(messages), 3)
+                self.assertTrue(Path(db_path).exists())
+                self.assertTrue(Path(config_path).exists())
+                self.assertTrue(Path(download_root, "marker.txt").exists())
                 self.assertFalse(Path("tesla_solar.sqlite3").exists())
                 self.assertFalse(Path("tesla_auth.json").exists())
                 self.assertFalse(Path("download").exists())

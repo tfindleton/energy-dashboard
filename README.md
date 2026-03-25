@@ -10,7 +10,7 @@ It uses the same local-browser Tesla sign-in pattern as `netzero-labs/tesla-sola
 - the final Tesla URL is pasted back into the app once
 - the Tesla session is cached locally for future syncs
 
-This project is standalone. It does not shell out to `tesla-solar-download`, but it can reuse an existing archive by pointing `--download-root` at that folder.
+This project is standalone. It does not shell out to `tesla-solar-download`, and it keeps its runtime files in a single predictable data folder. Legacy root-level installs are migrated into that layout automatically on startup.
 
 ## Features
 
@@ -65,12 +65,6 @@ Container defaults:
 - auth config `/data/tesla_auth.json`
 - archive root `/data/download`
 
-Path overrides currently use the older `SOLAR_DASHBOARD_*` variable names. Use these exact names:
-
-- `SOLAR_DASHBOARD_DB`
-- `SOLAR_DASHBOARD_CONFIG`
-- `SOLAR_DASHBOARD_DOWNLOAD_ROOT`
-
 Other common environment variables:
 
 - `TESLA_EMAIL`
@@ -118,10 +112,10 @@ The app keeps raw CSV files as the durable archive and SQLite as the fast query 
 Files are stored like this:
 
 ```text
-download/<site_id>/energy/YYYY-MM.csv
-download/<site_id>/energy/YYYY-MM.partial.csv
-download/<site_id>/power/YYYY-MM-DD.csv
-download/<site_id>/power/YYYY-MM-DD.partial.csv
+data/download/<site_id>/energy/YYYY-MM.csv
+data/download/<site_id>/energy/YYYY-MM.partial.csv
+data/download/<site_id>/power/YYYY-MM-DD.csv
+data/download/<site_id>/power/YYYY-MM-DD.partial.csv
 ```
 
 Behavior:
@@ -131,7 +125,7 @@ Behavior:
 - recent intraday power files are cached by day
 - the current day is refreshed as `.partial.csv`
 - SQLite is upserted from the local CSV archive after each sync
-- existing archives already under `download/` are imported automatically
+- legacy root-level `download/` archives are migrated and imported automatically
 
 ## Local Python
 
@@ -162,6 +156,8 @@ If you install the package, use the current console command `tesla-energy-dashbo
 
 That defaults to `serve` on `0.0.0.0:8000`, starts the web UI immediately, and runs scheduled syncs with the same defaults used by the container. The server does not open a browser unless you explicitly pass `--open-browser`, so container runs stay headless by default.
 
+On Windows, you can also run `start-local.bat`. It creates `.venv` with `uv`, installs requirements, and starts the dashboard on `http://127.0.0.1:8000/` without opening a browser automatically.
+
 Useful local commands:
 
 ```bash
@@ -169,5 +165,4 @@ python3 -m dashboard auth-start --email you@example.com
 python3 -m dashboard auth-finish --url "https://auth.tesla.com/void/callback?code=..."
 python3 -m dashboard sync --days-back 1825
 python3 -m dashboard serve --daily-sync-time off --sync-interval-minutes 0
-python3 -m dashboard --download-root "/path/to/existing/download" serve
 ```

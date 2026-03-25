@@ -11,5 +11,4 @@ tesla_auth.json.invalid-*
 tesla_solar.sqlite3
 *.sqlite3
 *.db
-/start-local.bat
 /data

@@ -38,7 +38,7 @@ def normalize_cli_args(argv: Sequence[str]) -> List[str]:
 
     normalized: List[str] = []
     index = 0
-    global_options_with_values = {"--db", "--config", "--download-root"}
+    global_options_with_values = {"--db"}
 
     while index < len(args):
         token = args[index]
@@ -60,27 +60,16 @@ def normalize_cli_args(argv: Sequence[str]) -> List[str]:
 
 def build_parser() -> argparse.ArgumentParser:
     db_default = os.environ.get("SOLAR_DASHBOARD_DB", DEFAULT_DB_PATH)
-    config_default = os.environ.get("SOLAR_DASHBOARD_CONFIG")
-    download_root_default = os.environ.get("SOLAR_DASHBOARD_DOWNLOAD_ROOT")
 
     parser = argparse.ArgumentParser(
         description="Sync Tesla energy history locally and serve a comparison dashboard."
     )
-    parser.add_argument("--db", default=db_default, help=f"SQLite database path (default: {db_default})")
     parser.add_argument(
-        "--config",
-        default=config_default,
+        "--db",
+        default=db_default,
         help=(
-            f"Auth config JSON path (default: {config_default or DEFAULT_CONFIG_PATH}; "
-            "when omitted, it stays alongside the DB path)"
-        ),
-    )
-    parser.add_argument(
-        "--download-root",
-        default=download_root_default,
-        help=(
-            f"Directory for archived Tesla CSV files (default: {download_root_default or DEFAULT_DOWNLOAD_ROOT}; "
-            "when omitted, it stays alongside the DB path)"
+            f"SQLite database path (default: {db_default}; "
+            "auth config and downloads stay alongside the DB)"
         ),
     )
     subparsers = parser.add_subparsers(dest="command")
@@ -127,8 +116,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def resolve_runtime_paths(args: argparse.Namespace) -> Tuple[str, str, str]:
     db_path = args.db
-    config_path = args.config or default_config_path_for_db_path(db_path)
-    download_root = args.download_root or default_download_root_for_db_path(db_path)
+    config_path = default_config_path_for_db_path(db_path)
+    download_root = default_download_root_for_db_path(db_path)
     return db_path, config_path, download_root
 
 
@@ -144,27 +133,35 @@ def _move_path_if_missing(source_path: str, target_path: str) -> Optional[str]:
     return f"Migrated {source_path} -> {target_path}"
 
 
+def _migration_candidates(target_path: str, legacy_name: str) -> List[str]:
+    target_dir = os.path.dirname(os.path.normpath(target_path))
+    candidates = []
+    if target_dir:
+        candidates.append(os.path.join(target_dir, legacy_name))
+    candidates.append(legacy_name)
+    return list(dict.fromkeys(candidates))
+
+
 def migrate_legacy_storage_layout(db_path: str, config_path: str, download_root: str) -> List[str]:
     messages: List[str] = []
 
-    db_candidates = [os.path.join(os.path.dirname(os.path.normpath(db_path)), LEGACY_DB_FILENAME)]
-    if os.path.normpath(db_path) == os.path.normpath(DEFAULT_DB_PATH):
-        db_candidates.append(LEGACY_DB_FILENAME)
-    for candidate in dict.fromkeys(db_candidates):
+    for candidate in _migration_candidates(db_path, LEGACY_DB_FILENAME):
         moved = _move_path_if_missing(candidate, db_path)
         if moved:
             messages.append(moved)
             break
 
-    if os.path.normpath(config_path) == os.path.normpath(DEFAULT_CONFIG_PATH):
-        moved = _move_path_if_missing(LEGACY_CONFIG_PATH, config_path)
+    for candidate in _migration_candidates(config_path, LEGACY_CONFIG_PATH):
+        moved = _move_path_if_missing(candidate, config_path)
         if moved:
             messages.append(moved)
+            break
 
-    if os.path.normpath(download_root) == os.path.normpath(DEFAULT_DOWNLOAD_ROOT):
-        moved = _move_path_if_missing(LEGACY_DOWNLOAD_ROOT, download_root)
+    for candidate in _migration_candidates(download_root, LEGACY_DOWNLOAD_ROOT):
+        moved = _move_path_if_missing(candidate, download_root)
         if moved:
             messages.append(moved)
+            break
 
     return messages
 

@@ -140,6 +140,10 @@ h1 {
   padding-right: 56px;
 }
 
+.panel-header-copy {
+  min-width: 0;
+}
+
 .panel-toggle {
   position: absolute;
   top: 18px;
@@ -238,6 +242,18 @@ h1 {
 
 .collapsible-panel.panel-collapsed > .panel-title,
 .collapsible-panel.panel-collapsed > .panel-header {
+  margin-bottom: 0;
+}
+
+.collapsible-panel.panel-collapsed > .panel-header {
+  align-items: center;
+}
+
+.collapsible-panel.panel-collapsed > .panel-header .panel-header-copy > :not(.panel-title) {
+  display: none;
+}
+
+.collapsible-panel.panel-collapsed > .panel-header .panel-title {
   margin-bottom: 0;
 }
 
