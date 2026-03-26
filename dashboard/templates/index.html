@@ -209,7 +209,10 @@
       <div class="day-compare-toolbar">
         <div class="field day-compare-date-field">
           <label for="dayCompareDate">Base Or Added Day</label>
-          <input id="dayCompareDate" type="date">
+          <div class="inline-input-group">
+            <input id="dayCompareDate" type="date">
+            <button type="button" id="dayCompareTodayButton" class="secondary compact-button">Today</button>
+          </div>
         </div>
         <div class="field day-compare-action-field">
           <label for="dayCompareAddButton">Selection</label>
@@ -247,17 +250,14 @@
         </div>
         <button type="button" class="secondary day-quick-chip day-quick-clear" data-day-quick="clear">Clear Selection</button>
       </div>
-      <div id="dayCompareSelection" class="selection-chips"></div>
       <div id="dayCompareMeta" class="meta"></div>
-      <div id="dayCompareHighlights" class="day-compare-highlights"></div>
-      <div id="dayCompareLegend" class="legend"></div>
+      <div id="dayCompareSelection" class="selection-chips"></div>
       <div class="chart-shell">
         <svg id="dayCompareChart" class="chart" viewBox="0 0 960 420" preserveAspectRatio="none"></svg>
       </div>
-      <details class="table-panel">
-        <summary>Show Day Compare Summary</summary>
-        <div id="dayCompareTable" class="table-wrap"></div>
-      </details>
+      <div id="dayCompareHighlights" class="day-compare-highlights"></div>
+      <div id="dayCompareLegend" class="legend" hidden></div>
+      <div id="dayCompareTable" class="table-wrap" hidden></div>
     </section>
 
     <section class="panel" id="comparisonPanel" data-section-view="charts" data-chart-panel="comparison">
@@ -274,7 +274,10 @@
         </div>
         <div class="field">
           <label for="anchorDate">Anchor Date</label>
-          <input id="anchorDate" type="date">
+          <div class="inline-input-group">
+            <input id="anchorDate" type="date">
+            <button type="button" id="anchorTodayButton" class="secondary compact-button">Today</button>
+          </div>
         </div>
         <div class="field">
           <label for="compareYears">Years Back</label>

@@ -53,7 +53,7 @@ code {
   align-items: end;
   padding: 22px 24px;
   border: 1px solid var(--panel-border);
-  border-radius: 24px;
+  border-radius: 0;
   background: var(--panel);
 }
 
@@ -111,14 +111,14 @@ h1 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 14px;
+  border-radius: 0;
 }
 
 .hero-status-next-badge {
   min-width: 138px;
   max-width: 148px;
   padding: 10px 12px;
-  border-radius: 14px;
+  border-radius: 0;
 }
 
 .hero-status-icon-badge.good,
@@ -153,7 +153,7 @@ h1 {
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: 10px;
+  border-radius: 0;
   border: 1px solid var(--panel-border);
   background: rgba(15, 20, 27, 0.78);
   color: var(--muted);
@@ -201,12 +201,11 @@ h1 {
   width: min(260px, calc(100vw - 48px));
   padding: 10px 12px;
   border: 1px solid var(--panel-border);
-  border-radius: 12px;
+  border-radius: 0;
   background: rgba(16, 22, 30, 0.98);
   color: var(--ink);
   font-size: 0.82rem;
   line-height: 1.45;
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.36);
   opacity: 0;
   pointer-events: none;
   transform: translateY(4px);
@@ -290,7 +289,7 @@ h1 {
   justify-content: flex-start;
   border: 1px solid rgba(40, 50, 65, 0.96);
   border-bottom-color: var(--panel-border);
-  border-radius: 18px 18px 0 0;
+  border-radius: 0;
   background: rgba(15, 20, 27, 0.78);
   color: var(--muted);
   box-shadow: none;
@@ -308,7 +307,7 @@ h1 {
 .section-tab.active {
   border-color: var(--panel-border);
   border-bottom-color: var(--panel);
-  background: linear-gradient(180deg, rgba(23, 30, 41, 1), rgba(19, 25, 34, 1));
+  background: #171e29;
   color: var(--ink);
   z-index: 2;
 }
@@ -326,6 +325,14 @@ h1 {
 
 .section-panel {
   padding-top: 24px;
+}
+
+#chartWorkspacePanel {
+  padding-bottom: 0;
+  border-bottom: none;
+  margin-bottom: -20px;
+  position: relative;
+  z-index: 2;
 }
 
 .section-meta {
@@ -346,7 +353,7 @@ h1 {
   position: relative;
   background: var(--panel);
   border: 1px solid var(--panel-border);
-  border-radius: 22px;
+  border-radius: 0;
   padding: 20px;
 }
 
@@ -381,11 +388,10 @@ h1 {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--panel-border);
-  border-radius: 12px;
-  background: linear-gradient(180deg, rgba(19, 25, 34, 0.96), rgba(16, 22, 30, 0.96));
+  border-radius: 0;
+  background: var(--panel-alt);
   color: var(--ink);
   cursor: pointer;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .panel-toggle:hover,
@@ -422,7 +428,7 @@ h1 {
   width: 32px;
   height: 32px;
   border: 1px solid var(--panel-border);
-  border-radius: 10px;
+  border-radius: 0;
   background: rgba(13, 17, 23, 0.3);
 }
 
@@ -434,7 +440,7 @@ h1 {
   position: absolute;
   left: 50%;
   top: 50%;
-  border-radius: 999px;
+  border-radius: 0;
   background: currentColor;
   transform: translate(-50%, -50%);
   transition: opacity 140ms ease;
@@ -494,39 +500,42 @@ h1 {
   display: flex;
   flex-wrap: wrap;
   align-items: end;
-  gap: 6px;
-  padding: 0 12px;
+  gap: 0;
+  padding: 0 20px;
 }
 
 .chart-tabs .chart-tab {
-  min-height: 46px;
-  padding: 11px 16px 12px;
-  border: 1px solid rgba(40, 50, 65, 0.96);
-  border-bottom-color: var(--panel-border);
-  border-radius: 16px 16px 0 0;
-  background: rgba(15, 20, 27, 0.9);
+  min-height: 40px;
+  padding: 9px 16px 10px;
+  border: 1px solid var(--panel-border);
+  border-bottom: none;
+  border-radius: 0;
+  background: var(--panel-alt);
   color: var(--muted);
   box-shadow: none;
+  margin-right: -1px;
+  position: relative;
 }
 
 .chart-tabs .chart-tab:hover {
-  border-color: #4b5a70;
-  background: #141c26;
+  background: var(--field);
   color: var(--ink);
   transform: none;
+  z-index: 1;
 }
 
 .chart-tabs .chart-tab.active {
-  border-color: #7c5202;
-  border-bottom-color: var(--panel);
-  background: var(--accent);
+  border-color: var(--accent);
+  border-bottom: none;
+  background: var(--panel);
   color: #fff;
-  z-index: 2;
+  z-index: 3;
 }
 
 .chart-panel-active {
   position: relative;
   z-index: 1;
+  border-top-color: var(--accent);
 }
 
 .compact-bar {
@@ -536,7 +545,7 @@ h1 {
   gap: 16px;
   padding: 16px;
   border: 1px solid var(--panel-border);
-  border-radius: 18px;
+  border-radius: 0;
   background: var(--panel-alt);
   margin-bottom: 16px;
 }
@@ -578,7 +587,7 @@ h1 {
   justify-content: center;
   min-height: 38px;
   padding: 0 12px;
-  border-radius: 999px;
+  border-radius: 0;
   border: 1px solid #116149;
   background: rgba(16, 185, 129, 0.12);
   color: #9fe2c7;
@@ -593,7 +602,7 @@ h1 {
   align-items: center;
   padding: 16px;
   border: 1px solid var(--panel-border);
-  border-radius: 18px;
+  border-radius: 0;
   background: var(--panel-alt);
   margin-bottom: 16px;
 }
@@ -629,7 +638,7 @@ h1 {
   align-items: start;
   padding: 16px;
   border: 1px solid var(--panel-border);
-  border-radius: 18px;
+  border-radius: 0;
   background: var(--panel-alt);
 }
 
@@ -644,7 +653,7 @@ h1 {
 .wizard-marker {
   width: 44px;
   height: 44px;
-  border-radius: 999px;
+  border-radius: 0;
   border: 1px solid var(--panel-border);
   background: var(--field);
   color: var(--muted);
@@ -708,7 +717,7 @@ input,
 select,
 button {
   font: inherit;
-  border-radius: 12px;
+  border-radius: 0;
   border: 1px solid var(--panel-border);
   padding: 12px 14px;
   background: var(--field);
@@ -725,7 +734,7 @@ button {
   color: #fff;
   font-weight: 700;
   cursor: pointer;
-  transition: transform 120ms ease, opacity 120ms ease;
+  transition: opacity 120ms ease;
 }
 
 button.secondary {
@@ -734,7 +743,7 @@ button.secondary {
 }
 
 button:hover {
-  transform: translateY(-1px);
+  transform: none;
 }
 
 button[disabled] {
@@ -826,7 +835,7 @@ button[disabled] {
 .progress-shell {
   margin-top: 14px;
   padding: 14px;
-  border-radius: 16px;
+  border-radius: 0;
   border: 1px solid var(--panel-border);
   background: var(--panel-alt);
 }
@@ -851,7 +860,7 @@ button[disabled] {
 .progress-track {
   margin-top: 10px;
   height: 10px;
-  border-radius: 999px;
+  border-radius: 0;
   background: var(--field);
   overflow: hidden;
 }
@@ -872,14 +881,13 @@ button[disabled] {
 
 .summary-card {
   padding: 16px;
-  border-radius: 16px;
+  border-radius: 0;
   border: 1px solid var(--panel-border);
   background: var(--panel-alt);
 }
 
 .summary-card.warning {
   border-color: rgba(245, 158, 11, 0.55);
-  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.22);
 }
 
 .summary-card .label {
@@ -922,7 +930,7 @@ button[disabled] {
   width: 100%;
   padding: 10px 12px 10px 14px;
   border: 1px solid var(--panel-border);
-  border-radius: 16px;
+  border-radius: 0;
   background: var(--panel-alt);
   color: var(--ink);
   text-align: left;
@@ -945,7 +953,7 @@ button[disabled] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
+  border-radius: 0;
   border: 1px solid var(--panel-border);
   background: rgba(15, 20, 27, 0.78);
   color: var(--muted);
@@ -1028,21 +1036,18 @@ button[disabled] {
 
 .insight-card {
   padding: 14px;
-  border-radius: 16px;
+  border-radius: 0;
   border: 1px solid var(--panel-border);
   background: var(--panel-alt);
 }
 
 .insight-card.solar {
-  box-shadow: inset 0 0 0 1px rgba(217, 119, 6, 0.3);
 }
 
 .insight-card.load {
-  box-shadow: inset 0 0 0 1px rgba(29, 78, 216, 0.3);
 }
 
 .insight-card.signal {
-  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.18);
 }
 
 .insight-card.good {
@@ -1093,7 +1098,7 @@ button[disabled] {
 
 .diagnostic-alert {
   padding: 14px 16px;
-  border-radius: 16px;
+  border-radius: 0;
   border: 1px solid var(--panel-border);
   background: var(--panel-alt);
 }
@@ -1151,7 +1156,7 @@ button[disabled] {
 
 .compact-button {
   padding: 8px 10px;
-  border-radius: 10px;
+  border-radius: 0;
   font-size: 0.82rem;
   white-space: nowrap;
 }
@@ -1277,7 +1282,7 @@ button[disabled] {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-radius: 999px;
+  border-radius: 0;
   border: 1px solid var(--panel-border);
   background: var(--panel-alt);
   color: var(--ink);
@@ -1287,7 +1292,7 @@ button[disabled] {
 .selection-chip-swatch {
   width: 10px;
   height: 10px;
-  border-radius: 999px;
+  border-radius: 0;
   flex: 0 0 auto;
 }
 
@@ -1314,7 +1319,7 @@ button[disabled] {
 
 .day-compare-highlight {
   padding: 14px 16px;
-  border-radius: 16px;
+  border-radius: 0;
   border: 1px solid var(--panel-border);
   background: var(--panel-alt);
 }
@@ -1354,7 +1359,7 @@ button[disabled] {
 
 .pill-toggle {
   font: inherit;
-  border-radius: 999px;
+  border-radius: 0;
   border: 1px solid var(--panel-border);
   padding: 10px 14px;
   background: var(--field);
@@ -1396,7 +1401,7 @@ button[disabled] {
 
 .range-chip {
   padding: 8px 12px;
-  border-radius: 999px;
+  border-radius: 0;
 }
 
 .scope-chip.active,
@@ -1411,7 +1416,7 @@ button[disabled] {
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border-radius: 999px;
+  border-radius: 0;
   background: var(--panel-alt);
   border: 1px solid var(--panel-border);
 }
@@ -1439,12 +1444,12 @@ button[disabled] {
 .legend-swatch {
   width: 12px;
   height: 12px;
-  border-radius: 999px;
+  border-radius: 0;
 }
 
 .chart-shell {
   position: relative;
-  border-radius: 18px;
+  border-radius: 0;
   border: 1px solid var(--panel-border);
   background: var(--panel-alt);
   padding: 12px;
@@ -1474,10 +1479,9 @@ svg.chart {
   max-width: 240px;
   padding: 10px 12px;
   border: 1px solid var(--panel-border);
-  border-radius: 12px;
+  border-radius: 0;
   background: rgba(10, 14, 20, 0.96);
   color: var(--ink);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
   pointer-events: none;
 }
 
@@ -1497,7 +1501,7 @@ svg.chart {
 .chart-tooltip-swatch {
   width: 10px;
   height: 10px;
-  border-radius: 999px;
+  border-radius: 0;
   flex: 0 0 auto;
 }
 
@@ -1528,7 +1532,7 @@ svg.chart {
 
 .table-panel {
   margin-top: 14px;
-  border-radius: 14px;
+  border-radius: 0;
   border: 1px solid var(--panel-border);
   background: var(--panel-alt);
 }
@@ -1622,19 +1626,15 @@ td:first-child {
   display: grid;
   place-items: center;
   padding: 24px;
-  background:
-    radial-gradient(circle at top, rgba(59, 130, 246, 0.12), transparent 36%),
-    rgba(13, 17, 23, 0.94);
-  backdrop-filter: blur(8px);
+  background: rgba(13, 17, 23, 0.96);
 }
 
 .boot-card {
   width: min(440px, calc(100vw - 48px));
   padding: 28px 24px;
   border: 1px solid var(--panel-border);
-  border-radius: 24px;
-  background: linear-gradient(180deg, rgba(19, 25, 34, 0.98), rgba(16, 22, 30, 0.96));
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  border-radius: 0;
+  background: var(--panel);
 }
 
 .boot-spinner {
@@ -1690,7 +1690,7 @@ td:first-child {
   }
 
   .chart-tab {
-    flex: 1 1 calc(50% - 6px);
+    flex: 1 1 calc(50% - 1px);
     min-width: 0;
   }
 

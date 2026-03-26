@@ -52,7 +52,18 @@ const ICONS = {
   chevronLeft: `<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"></path></svg>`,
   chevronRight: `<svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"></path></svg>`,
   x: `<svg viewBox="0 0 24 24"><path d="M6 6l12 12"></path><path d="M18 6L6 18"></path></svg>`,
-  calendar: `<svg viewBox="0 0 24 24"><path d="M8 2v4"></path><path d="M16 2v4"></path><path d="M3 9h18"></path><rect x="3" y="4" width="18" height="17" rx="2"></rect></svg>`
+  calendar: `<svg viewBox="0 0 24 24"><path d="M8 2v4"></path><path d="M16 2v4"></path><path d="M3 9h18"></path><rect x="3" y="4" width="18" height="17" rx="0"></rect></svg>`,
+  trophy: `<svg viewBox="0 0 24 24"><path d="M8 21h8"></path><path d="M12 17v4"></path><path d="M7 4h10v5a5 5 0 0 1-10 0V4z"></path><path d="M17 4h2a1 1 0 0 1 1 1v1a3 3 0 0 1-3 3"></path><path d="M7 4H5a1 1 0 0 0-1 1v1a3 3 0 0 0 3 3"></path></svg>`,
+  crown: `<svg viewBox="0 0 24 24"><path d="M4 18h16"></path><path d="M4 18l2-10 4 4 2-8 2 8 4-4 2 10"></path></svg>`,
+  medal: `<svg viewBox="0 0 24 24"><circle cx="12" cy="15" r="5"></circle><path d="M9 3h6"></path><path d="M9 3l1.5 7"></path><path d="M15 3l-1.5 7"></path></svg>`,
+  star: `<svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14l-5-4.87 6.91-1.01L12 2z"></path></svg>`,
+  flame: `<svg viewBox="0 0 24 24"><path d="M12 2c-2 4-6 6-6 11a6 6 0 0 0 12 0c0-5-4-7-6-11z"></path><path d="M10 17a2.5 2.5 0 0 1 2-4c1 2 2 2.5 2 4a2 2 0 0 1-4 0z"></path></svg>`,
+  gauge: `<svg viewBox="0 0 24 24"><path d="M4.5 16.5a9 9 0 1 1 15 0"></path><path d="M12 12l-3.5-3.5"></path><circle cx="12" cy="12" r="1.5"></circle></svg>`,
+  target: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>`,
+  trendUp: `<svg viewBox="0 0 24 24"><path d="M22 7l-8.5 8.5-5-5L2 17"></path><path d="M16 7h6v6"></path></svg>`,
+  trendDown: `<svg viewBox="0 0 24 24"><path d="M22 17l-8.5-8.5-5 5L2 7"></path><path d="M16 17h6v-6"></path></svg>`,
+  mountain: `<svg viewBox="0 0 24 24"><path d="M2 20l7-14 4 6 5-10 4 8"></path><path d="M2 20h20"></path></svg>`,
+  check: `<svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"></path></svg>`
 };
 
 const DEFAULT_CHART_VIEW = "diagnostics";
@@ -365,6 +376,28 @@ function insightIconSpec(sectionTitle, itemLabel = "", accent = "") {
     return { icon: "home", tone: "load" };
   }
   return { icon: "bolt", tone: "signal" };
+}
+
+function insightItemIconSpec(sectionTitle, itemLabel, accent) {
+  const text = (itemLabel || "").toLowerCase();
+  const isSolar = accent === "solar" || text.includes("solar");
+  const isLoad = accent === "load" || text.includes("usage") || text.includes("load");
+  const tone = isSolar ? "solar" : isLoad ? "load" : accent === "signal" ? "signal" : "signal";
+
+  // Day/week/month/year bests and highests share icons; tone (color) differentiates solar vs load
+  if (text.includes("day")) return { icon: "trophy", tone };
+  if (text.includes("week")) return { icon: "medal", tone };
+  if (text.includes("month")) return { icon: "crown", tone };
+  if (text.includes("year") && !text.includes("vs")) return { icon: "star", tone };
+
+  if (text.includes("solar ytd") && !text.includes("vs")) return { icon: "target", tone: "solar" };
+  if (text.includes("usage ytd")) return { icon: "target", tone: "load" };
+
+  if (text.includes("self-powered")) return { icon: "shield", tone: "signal" };
+  if (text.includes("vs last year")) return { icon: "trendUp", tone: "signal" };
+  if (text.includes("export share")) return { icon: "gridExport", tone: "grid-export" };
+
+  return insightIconSpec(sectionTitle, itemLabel, accent);
 }
 
 function setControlButtonLabel(button, iconName, label) {
@@ -840,14 +873,42 @@ function dayCompareRangeBounds() {
 }
 
 function latestComparableDay(site) {
-  const candidates = [
-    parseDateInput(site?.data_end || ""),
-    parseDateInput(state.status?.default_anchor_date || "")
-  ].filter(Boolean);
-  if (!candidates.length) {
-    return null;
+  return parseDateInput(site?.data_end || state.status?.default_anchor_date || "");
+}
+
+function currentDayCompareAnchor() {
+  const fallback = parseDateInput($("dayCompareDate")?.value || state.status?.default_anchor_date);
+  if (!state.dayCompareDates.length) {
+    return fallback;
   }
-  return candidates.reduce((best, current) => minDate(best, current));
+  if (state.dayComparePreset === "last7" || state.dayComparePreset === "same-day-years") {
+    return parseDateInput(state.dayCompareDates[state.dayCompareDates.length - 1]) || fallback;
+  }
+  return fallback;
+}
+
+function shouldAutoApplyDayCompareAnchor() {
+  return state.dayComparePreset === "last7" || state.dayComparePreset === "same-day-years";
+}
+
+function setDayCompareAnchor(date) {
+  if (!date) {
+    return;
+  }
+  $("dayCompareDate").value = formatDateInput(date);
+}
+
+function applyDayCompareAnchorSelection() {
+  const anchor = parseDateInput($("dayCompareDate").value);
+  if (!anchor) {
+    renderDayCompareWindowNav();
+    return;
+  }
+  if (shouldAutoApplyDayCompareAnchor()) {
+    applyDayCompareQuick(state.dayComparePreset);
+    return;
+  }
+  renderDayCompareWindowNav();
 }
 
 function selectedDayCompareAxisMax() {
@@ -952,7 +1013,7 @@ function renderDayCompareWindowNav() {
 
   const earliestStart = parseDateInput(site.data_start || "");
   const latestEnd = latestComparableDay(site);
-  const anchor = parseDateInput($("dayCompareDate").value || state.status?.default_anchor_date);
+  const anchor = currentDayCompareAnchor();
 
   if (!anchor) {
     prevButton.disabled = true;
@@ -1061,9 +1122,11 @@ function applyDayCompareQuick(preset) {
     }
     setDayComparePreset("last7");
     setDayCompareDates(dates);
+    setDayCompareAnchor(anchor);
   } else if (preset === "same-day-years") {
     setDayComparePreset("same-day-years");
     setDayCompareDates(buildSameDayPreviousYearsDates(anchor, site));
+    setDayCompareAnchor(anchor);
   }
   loadDayCompare().catch((error) => setStatus(error.message, "error"));
 }
@@ -1097,7 +1160,7 @@ function pageDayCompareWindow(direction) {
     return;
   }
   const site = currentSite();
-  const anchor = parseDateInput($("dayCompareDate").value || state.status?.default_anchor_date);
+  const anchor = currentDayCompareAnchor();
   if (!site || !anchor) {
     return;
   }
@@ -1282,9 +1345,11 @@ function setSyncCronValidation(message = "", tone = "") {
 
 function applyStaticButtonIcons() {
   setControlButtonLabel($("syncButton"), "refresh", "Sync Now");
-  setControlButtonLabel($("saveSyncCronButton"), "bolt", "Save Schedule");
+  setControlButtonLabel($("saveSyncCronButton"), "check", "Save Schedule");
   setControlButtonLabel($("dayCompareAddButton"), "plus", "Add Day");
   setControlButtonLabel($("dayCompareRefreshButton"), "refresh", "Refresh");
+  setControlButtonLabel($("dayCompareTodayButton"), "calendar", "Today");
+  setControlButtonLabel($("anchorTodayButton"), "calendar", "Today");
   document.querySelectorAll(".section-tab").forEach((button) => {
     const sectionView = button.dataset.sectionView || "charts";
     const iconName = sectionView === "signin"
@@ -1292,7 +1357,7 @@ function applyStaticButtonIcons() {
       : sectionView === "sync"
         ? "refresh"
         : sectionView === "insights"
-          ? "home"
+          ? "trophy"
           : "chart";
     const label = button.textContent || "";
     button.classList.add("button-with-icon");
@@ -1764,7 +1829,7 @@ function renderInsights(payload) {
         <div class="subsection-body">
           <div class="insight-grid">
             ${(section.items || []).map((item) => {
-              const itemSpec = insightIconSpec(section.title || "", item.label || "", section.accent || "");
+              const itemSpec = insightItemIconSpec(section.title || "", item.label || "", section.accent || "");
               return `
                 <article class="insight-card ${escapeHtml(section.accent || "")} ${escapeHtml(item.tone || "")}">
                   <div class="insight-card-head">
@@ -1825,7 +1890,7 @@ function renderDiagnostics(payload) {
         <div class="subsection-body">
           <div class="insight-grid">
             ${(section.items || []).map((item) => {
-              const itemSpec = insightIconSpec(section.title || "", item.label || "", section.accent || "");
+              const itemSpec = insightItemIconSpec(section.title || "", item.label || "", section.accent || "");
               return `
                 <article class="insight-card ${escapeHtml(section.accent || "")} ${escapeHtml(item.tone || "")}">
                   <div class="insight-card-head">
@@ -1930,7 +1995,7 @@ function emptySvg(svg, message) {
   svg.style.minWidth = "720px";
   svg.style.height = "420px";
   svg.innerHTML = `
-    <rect x="0" y="0" width="960" height="420" rx="14" fill="transparent"></rect>
+    <rect x="0" y="0" width="960" height="420" rx="0" fill="transparent"></rect>
     <text x="480" y="210" text-anchor="middle" fill="${CHART_COLORS.muted}" font-size="16">${escapeHtml(message)}</text>
   `;
 }
@@ -1987,7 +2052,7 @@ function renderGroupedBarChart(svgId, payload) {
   const labelStep = axisLabelStep(labels.length, innerWidth, 84);
   const parts = [];
 
-  parts.push(`<rect x="0" y="0" width="${width}" height="${height}" rx="16" fill="transparent"></rect>`);
+  parts.push(`<rect x="0" y="0" width="${width}" height="${height}" rx="0" fill="transparent"></rect>`);
 
   for (let i = 0; i <= ticks; i += 1) {
     const value = (maxValue / ticks) * i;
@@ -2011,7 +2076,7 @@ function renderGroupedBarChart(svgId, payload) {
           y="${y}"
           width="${barWidth - 4}"
           height="${Math.max(barHeight, 0)}"
-          rx="4"
+          rx="0"
           fill="${metric.color}"
           data-tooltip-series="${escapeHtml(metric.label)}"
           data-tooltip-label="${escapeHtml(label)}"
@@ -2066,7 +2131,7 @@ function renderLineChart(svgId, payload) {
   const strokeWidth = dense ? 2.1 : 3;
   const parts = [];
 
-  parts.push(`<rect x="0" y="0" width="${width}" height="${height}" rx="16" fill="transparent"></rect>`);
+  parts.push(`<rect x="0" y="0" width="${width}" height="${height}" rx="0" fill="transparent"></rect>`);
 
   for (let i = 0; i <= ticks; i += 1) {
     const value = (maxValue / ticks) * i;
@@ -2919,6 +2984,15 @@ function wireEvents() {
     loadDayCompare().catch((error) => setStatus(error.message, "error"));
   });
   $("dayCompareRefreshButton").addEventListener("click", () => loadDayCompare().catch((error) => setStatus(error.message, "error")));
+  $("dayCompareDate").addEventListener("change", applyDayCompareAnchorSelection);
+  $("dayCompareTodayButton").addEventListener("click", () => {
+    setDayCompareAnchor(new Date());
+    applyDayCompareAnchorSelection();
+  });
+  $("anchorTodayButton").addEventListener("click", () => {
+    $("anchorDate").value = formatDateInput(new Date());
+    renderComparisonWindowNav();
+  });
   $("dayComparePrevButton").addEventListener("click", () => pageDayCompareWindow(-1));
   $("dayCompareNextButton").addEventListener("click", () => pageDayCompareWindow(1));
   $("dayCompareMetric").addEventListener("change", () => loadDayCompare().catch((error) => setStatus(error.message, "error")));
