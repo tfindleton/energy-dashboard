@@ -31,14 +31,8 @@ class ServiceAuthMixin(DashboardServiceBase):
                     "Please start Tesla sign-in again."
                 )
                 print(f"[config] Backed up invalid config to {backup_path}", file=sys.stderr, flush=True)
-        env_map = {
-            "email": "TESLA_EMAIL",
-            "energy_site_id": "TESLA_ENERGY_SITE_ID",
-            "time_zone": "TESLA_TIME_ZONE",
-        }
-        for key, env_name in env_map.items():
-            if os.environ.get(env_name):
-                config[key] = os.environ[env_name]
+        if not config.get("time_zone") and os.environ.get("TESLA_TIME_ZONE"):
+            config["time_zone"] = os.environ["TESLA_TIME_ZONE"]
         return config
 
     def save_config(self, config: Dict[str, Any]) -> None:

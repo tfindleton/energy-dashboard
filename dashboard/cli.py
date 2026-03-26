@@ -31,43 +31,14 @@ def normalize_cli_args(argv: Sequence[str]) -> List[str]:
     commands = {"auth-start", "auth-finish", "sync", "serve"}
     if any(arg in commands for arg in args):
         return args
-
-    normalized: List[str] = []
-    index = 0
-    global_options_with_values = {"--db"}
-
-    while index < len(args):
-        token = args[index]
-        if token in global_options_with_values:
-            normalized.append(token)
-            index += 1
-            if index < len(args):
-                normalized.append(args[index])
-                index += 1
-            continue
-        if any(token.startswith(f"{option}=") for option in global_options_with_values):
-            normalized.append(token)
-            index += 1
-            continue
-        break
-
-    return normalized + ["serve"] + args[index:]
+    return ["serve"] + args
 
 
 def build_parser() -> argparse.ArgumentParser:
-    db_default = os.environ.get("SOLAR_DASHBOARD_DB", DEFAULT_DB_PATH)
-    sync_cron_default = os.environ.get("SYNC_CRON", DEFAULT_SYNC_CRON)
+    sync_cron_default = DEFAULT_SYNC_CRON
 
     parser = argparse.ArgumentParser(
         description="Sync Tesla energy history locally and serve a comparison dashboard."
-    )
-    parser.add_argument(
-        "--db",
-        default=db_default,
-        help=(
-            f"SQLite database path (default: {db_default}; "
-            "auth config, sync schedule, and downloads stay alongside the DB)"
-        ),
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -104,8 +75,8 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def resolve_runtime_paths(args: argparse.Namespace) -> Tuple[str, str, str]:
-    db_path = args.db
+def resolve_runtime_paths() -> Tuple[str, str, str]:
+    db_path = DEFAULT_DB_PATH
     config_path = default_config_path_for_db_path(db_path)
     download_root = default_download_root_for_db_path(db_path)
     return db_path, config_path, download_root
@@ -161,7 +132,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_args = list(argv) if argv is not None else sys.argv[1:]
     args = parser.parse_args(normalize_cli_args(raw_args))
     command = args.command
-    db_path, config_path, download_root = resolve_runtime_paths(args)
+    db_path, config_path, download_root = resolve_runtime_paths()
 
     for message in migrate_legacy_storage_layout(db_path, config_path, download_root):
         print(message)

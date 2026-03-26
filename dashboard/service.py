@@ -28,7 +28,7 @@ class TeslaSolarDashboard(ServiceSyncMixin, ServiceViewsMixin, ServiceArchiveMix
         self.auto_sync_description = ""
         self.auto_sync_next_run: Optional[str] = None
         self.auto_sync_site_id: Optional[str] = None
-        self.sync_cron_default = normalize_sync_cron(os.environ.get("SYNC_CRON", DEFAULT_SYNC_CRON))
+        self.sync_cron_default = normalize_sync_cron(DEFAULT_SYNC_CRON)
         self.sync_schedule_refresh: Optional[Callable[[], None]] = None
         self.config_warning = ""
         self._last_sync_log_signature = ""

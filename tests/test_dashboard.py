@@ -503,20 +503,16 @@ class CliTests(unittest.TestCase):
     def test_no_args_defaults_to_serve(self) -> None:
         self.assertEqual(normalize_cli_args([]), ["serve"])
 
-    def test_global_options_before_implicit_serve_are_preserved(self) -> None:
+    def test_non_command_args_default_to_serve(self) -> None:
         self.assertEqual(
             normalize_cli_args(
                 [
-                    "--db",
-                    "custom.sqlite3",
                     "--port",
                     "9000",
                     "--no-sync-on-start",
                 ]
             ),
             [
-                "--db",
-                "custom.sqlite3",
                 "serve",
                 "--port",
                 "9000",
@@ -544,27 +540,19 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(args.sync_cron, "15 4 * * 1-5")
 
-    def test_default_runtime_paths_use_shared_data_directory(self) -> None:
-        with mock.patch.dict(os.environ, {}, clear=True):
+    def test_serve_parser_default_sync_cron_ignores_environment(self) -> None:
+        with mock.patch.dict(os.environ, {"SYNC_CRON": "30 3 * * *"}, clear=True):
             parser = build_parser()
             args = parser.parse_args(["serve"])
 
-        db_path, config_path, download_root = resolve_runtime_paths(args)
+        self.assertEqual(args.sync_cron, "0 1 * * *")
+
+    def test_default_runtime_paths_use_shared_data_directory(self) -> None:
+        db_path, config_path, download_root = resolve_runtime_paths()
 
         self.assertEqual(db_path, DEFAULT_DB_PATH)
         self.assertEqual(config_path, default_config_path_for_db_path(DEFAULT_DB_PATH))
         self.assertEqual(download_root, default_download_root_for_db_path(DEFAULT_DB_PATH))
-
-    def test_config_and_download_root_follow_custom_db_directory(self) -> None:
-        with mock.patch.dict(os.environ, {}, clear=True):
-            parser = build_parser()
-            args = parser.parse_args(["--db", os.path.join("custom", "store.sqlite3"), "serve"])
-
-        db_path, config_path, download_root = resolve_runtime_paths(args)
-
-        self.assertEqual(db_path, os.path.join("custom", "store.sqlite3"))
-        self.assertEqual(config_path, os.path.join("custom", "tesla_auth.json"))
-        self.assertEqual(download_root, os.path.join("custom", "download"))
 
     def test_legacy_default_storage_is_migrated_into_data_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
@@ -590,33 +578,6 @@ class CliTests(unittest.TestCase):
             finally:
                 os.chdir(previous_cwd)
 
-    def test_legacy_root_storage_moves_next_to_custom_db(self) -> None:
-        with tempfile.TemporaryDirectory() as tempdir:
-            previous_cwd = os.getcwd()
-            os.chdir(tempdir)
-            try:
-                Path("tesla_solar.sqlite3").write_text("db")
-                Path("tesla_auth.json").write_text("auth")
-                Path("download").mkdir()
-                Path("download/marker.txt").write_text("archive")
-
-                db_path = os.path.join("custom", "store.sqlite3")
-                config_path = os.path.join("custom", "tesla_auth.json")
-                download_root = os.path.join("custom", "download")
-
-                messages = migrate_legacy_storage_layout(db_path, config_path, download_root)
-
-                self.assertEqual(len(messages), 3)
-                self.assertTrue(Path(db_path).exists())
-                self.assertTrue(Path(config_path).exists())
-                self.assertTrue(Path(download_root, "marker.txt").exists())
-                self.assertFalse(Path("tesla_solar.sqlite3").exists())
-                self.assertFalse(Path("tesla_auth.json").exists())
-                self.assertFalse(Path("download").exists())
-            finally:
-                os.chdir(previous_cwd)
-
-
     def test_save_sync_settings_persists_cron_expression(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             app = TeslaSolarDashboard(
@@ -629,6 +590,45 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(payload["sync_cron"], "15 4 * * 1-5")
             self.assertEqual(app.config_public_payload()["sync_cron"], "15 4 * * 1-5")
+
+    def test_load_config_ignores_email_and_site_environment_overrides(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            app = TeslaSolarDashboard(
+                db_path=f"{tempdir}/test.sqlite3",
+                config_path=f"{tempdir}/tesla_auth.json",
+                download_root=f"{tempdir}/archive",
+            )
+            app.save_config({"email": "saved@example.com", "energy_site_id": "123"})
+
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "TESLA_EMAIL": "env@example.com",
+                    "TESLA_ENERGY_SITE_ID": "999",
+                },
+                clear=False,
+            ):
+                config = app.load_config()
+
+            self.assertEqual(config["email"], "saved@example.com")
+            self.assertEqual(config["energy_site_id"], "123")
+
+    def test_load_config_uses_timezone_environment_as_fallback_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            app = TeslaSolarDashboard(
+                db_path=f"{tempdir}/test.sqlite3",
+                config_path=f"{tempdir}/tesla_auth.json",
+                download_root=f"{tempdir}/archive",
+            )
+
+            with mock.patch.dict(os.environ, {"TESLA_TIME_ZONE": "America/Los_Angeles"}, clear=False):
+                config = app.load_config()
+            self.assertEqual(config["time_zone"], "America/Los_Angeles")
+
+            app.save_config({"time_zone": "America/New_York"})
+            with mock.patch.dict(os.environ, {"TESLA_TIME_ZONE": "America/Los_Angeles"}, clear=False):
+                config = app.load_config()
+            self.assertEqual(config["time_zone"], "America/New_York")
 
 
 class ServerTests(unittest.TestCase):

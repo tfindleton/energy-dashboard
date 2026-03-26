@@ -23,10 +23,10 @@ This project is standalone. It does not shell out to `tesla-solar-download`, and
 
 ## Docker Quick Start
 
-Build the image:
+Pull the published image from GitHub Container Registry:
 
 ```bash
-docker build -t energy-dashboard .
+docker pull ghcr.io/tfindleton/energy-dashboard:latest
 ```
 
 Run it with a persistent data volume:
@@ -37,7 +37,7 @@ docker run -d \
   --restart unless-stopped \
   -p 8000:8000 \
   -v energy-dashboard-data:/data \
-  energy-dashboard
+  ghcr.io/tfindleton/energy-dashboard:latest
 ```
 
 Open:
@@ -65,29 +65,28 @@ Container defaults:
 - auth config `/data/tesla_auth.json`
 - archive root `/data/download`
 
-Other common environment variables:
+Container environment should stay minimal:
 
-- `TESLA_EMAIL`
-- `TESLA_ENERGY_SITE_ID`
-- `TESLA_TIME_ZONE`
 - `PORT`
-- `SYNC_CRON`
 - `DEBUG_HTTP`
+- optional `TESLA_TIME_ZONE`
 
-Example with overrides:
+Tesla account email, pinned site selection, and sync schedule are managed inside the web UI and persisted under `/data`. You do not need to pass them into the container.
+
+Example with a custom host port, debug HTTP logging, and an optional Tesla timezone fallback:
 
 ```bash
 docker run -d \
   --name energy-dashboard \
   --restart unless-stopped \
   -p 8080:8000 \
-  -e TESLA_EMAIL=you@example.com \
-  -e TESLA_ENERGY_SITE_ID=1234567890 \
-  -e SYNC_CRON="30 3 * * *" \
   -e DEBUG_HTTP=1 \
+  -e TESLA_TIME_ZONE=America/Los_Angeles \
   -v "$PWD/data:/data" \
-  energy-dashboard
+  ghcr.io/tfindleton/energy-dashboard:latest
 ```
+
+Use `TESLA_TIME_ZONE` only when the machine running the container is in a different timezone than the Tesla site and you want the first sync windows aligned before Tesla site metadata is cached. Once the app has saved the Tesla site timezone from Tesla itself or from the web UI, you usually do not need this override.
 
 The image also works with Podman. If your host uses SELinux, add a relabel suffix such as `:Z` to the `/data` mount.
 
@@ -104,6 +103,8 @@ The app uses a guided TeslaPy local browser flow:
 7. Click `Sync Now`.
 
 After that, the cached Tesla session is reused for scheduled and manual syncs until it expires or you sign out.
+
+If your Tesla site timezone differs from the machine running the app, you can also set the Tesla timezone in the app, for example `America/Los_Angeles`. That setting is a fallback for archive window alignment when Tesla site metadata is missing or not cached yet. It does not change when the cron schedule runs; cron still uses the server or container local time.
 
 ## Data Storage
 
