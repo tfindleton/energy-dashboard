@@ -18,9 +18,10 @@ __all__ = ["TeslaSolarDashboard", "extract_history_rows", "extract_installation_
 
 class TeslaSolarDashboard(ServiceSyncMixin, ServiceViewsMixin, ServiceArchiveMixin, ServiceAuthMixin):
     def __init__(self, db_path: str, config_path: str, download_root: Optional[str] = None) -> None:
-        self.db_path = db_path
-        self.config_path = config_path
-        self.download_root = os.path.abspath(download_root or default_download_root_for_db_path(db_path))
+        self.db_path = os.path.abspath(db_path)
+        self.config_path = os.path.abspath(config_path)
+        self.download_root = os.path.abspath(download_root or default_download_root_for_db_path(self.db_path))
+        self._ensure_runtime_paths()
         self.sync_lock = threading.Lock()
         self.sync_progress_lock = threading.Lock()
         self.archive_refresh_lock = threading.Lock()
@@ -48,6 +49,15 @@ class TeslaSolarDashboard(ServiceSyncMixin, ServiceViewsMixin, ServiceArchiveMix
             "error": "",
         }
         self._init_db()
+
+    def _ensure_runtime_paths(self) -> None:
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
+        config_dir = os.path.dirname(self.config_path)
+        if config_dir:
+            os.makedirs(config_dir, exist_ok=True)
+        os.makedirs(self.download_root, exist_ok=True)
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)

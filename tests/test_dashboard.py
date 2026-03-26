@@ -554,6 +554,22 @@ class CliTests(unittest.TestCase):
         self.assertEqual(config_path, default_config_path_for_db_path(DEFAULT_DB_PATH))
         self.assertEqual(download_root, default_download_root_for_db_path(DEFAULT_DB_PATH))
 
+    def test_dashboard_creates_missing_runtime_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            db_path = os.path.join(tempdir, "nested", "data", "dashboard.sqlite3")
+            config_path = os.path.join(tempdir, "nested", "data", "tesla_auth.json")
+            download_root = os.path.join(tempdir, "nested", "data", "download")
+
+            app = TeslaSolarDashboard(
+                db_path=db_path,
+                config_path=config_path,
+                download_root=download_root,
+            )
+
+            self.assertTrue(Path(app.db_path).exists())
+            self.assertTrue(Path(app.download_root).is_dir())
+            self.assertTrue(Path(app.config_path).parent.is_dir())
+
     def test_legacy_default_storage_is_migrated_into_data_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             previous_cwd = os.getcwd()

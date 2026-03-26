@@ -10,6 +10,7 @@ COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY dashboard /app/dashboard
+RUN mkdir -p /data && ln -sfn /data /app/data
 
 VOLUME ["/data"]
 EXPOSE 8000
