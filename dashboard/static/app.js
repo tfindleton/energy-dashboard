@@ -1048,13 +1048,38 @@ function renderDayCompareSelection() {
     return;
   }
   const seriesCount = state.dayCompareDates.length;
-  container.innerHTML = state.dayCompareDates.map((date, index) => `
-    <span class="selection-chip">
-      <span class="selection-chip-swatch" style="background:${escapeHtml(paletteColor(index, seriesCount, DAY_COMPARE_SERIES_COLORS))}"></span>
-      <span>${escapeHtml(date)}</span>
-      <button type="button" class="day-compare-remove" data-date="${escapeHtml(date)}" aria-label="Remove ${escapeHtml(date)}">×</button>
-    </span>
-  `).join("");
+  const payloadDates = state.dayComparePayload?.selected_dates || [];
+  const payloadMatchesSelection = payloadDates.length === state.dayCompareDates.length
+    && payloadDates.every((date, index) => date === state.dayCompareDates[index]);
+  const payloadSeries = payloadMatchesSelection
+    ? new Map((state.dayComparePayload?.series || []).map((item) => [item.metric, item]))
+    : new Map();
+  const missingDates = payloadMatchesSelection
+    ? new Set(state.dayComparePayload?.missing_dates || [])
+    : new Set();
+  container.innerHTML = state.dayCompareDates.map((date, index) => {
+    const loadedSeries = payloadSeries.get(date);
+    const fallbackColor = paletteColor(index, seriesCount, DAY_COMPARE_SERIES_COLORS);
+    const swatchColor = loadedSeries?.color || fallbackColor;
+    const isMissing = missingDates.has(date);
+    const chipClasses = ["selection-chip"];
+    if (isMissing) {
+      chipClasses.push("missing");
+    }
+    const label = isMissing ? `${date} (missing)` : date;
+    const title = isMissing
+      ? `${date} is missing intraday power data, so it is excluded from the chart.`
+      : loadedSeries
+        ? `${date} is loaded and color-matched to the chart.`
+        : `${date} is selected.`;
+    return `
+      <span class="${chipClasses.join(" ")}" title="${escapeHtml(title)}">
+        <span class="selection-chip-swatch" style="background:${escapeHtml(swatchColor)}"></span>
+        <span>${escapeHtml(label)}</span>
+        <button type="button" class="day-compare-remove" data-date="${escapeHtml(date)}" aria-label="Remove ${escapeHtml(date)}">×</button>
+      </span>
+    `;
+  }).join("");
   renderDayCompareWindowNav();
 }
 
@@ -2463,6 +2488,7 @@ async function loadDayCompare() {
   state.dayComparePayload = payload;
   state.dayComparePayload.shared_tooltip = true;
   applyDayCompareAxisMax(state.dayComparePayload);
+  renderDayCompareSelection();
   const hasEstimatedTotals = (payload.rows || []).some((row) => row.total_source !== "energy");
   const missingText = payload.missing_dates?.length
     ? ` · Missing ${payload.missing_dates.join(", ")}`
