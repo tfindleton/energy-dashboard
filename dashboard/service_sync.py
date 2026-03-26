@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from .common import DEFAULT_POWER_BACKFILL_DAYS, FULL_SYNC_FALLBACK_DAYS, detect_local_timezone_name, utc_now_iso
+from .common import FULL_SYNC_FALLBACK_DAYS, detect_local_timezone_name, utc_now_iso
 from .service_base import DashboardServiceBase
 from .tesla_api import (
     extract_energy_sites,
@@ -143,15 +143,9 @@ class ServiceSyncMixin(DashboardServiceBase):
         existing_archive_start = self._earliest_energy_archive_date(site_id)
         archive_start_date = installation_date or existing_archive_start or fallback_start_date
         archive_start_date = dt.date(archive_start_date.year, archive_start_date.month, 1)
-        power_start_date = max(
-            archive_start_date,
-            end_date - dt.timedelta(days=DEFAULT_POWER_BACKFILL_DAYS - 1),
-        )
+        power_start_date = archive_start_date
         if installation_date is not None:
             power_start_date = max(power_start_date, installation_date)
-        latest_power_date = self._latest_power_archive_date(site_id)
-        if latest_power_date is not None:
-            power_start_date = max(power_start_date, latest_power_date)
 
         self._cleanup_partial_energy_csvs(site_id)
         self._cleanup_partial_power_csvs(site_id)

@@ -647,6 +647,40 @@ class CliTests(unittest.TestCase):
             self.assertEqual(config["time_zone"], "America/New_York")
 
 
+class SyncPlanningTests(unittest.TestCase):
+    def test_site_sync_plan_downloads_power_from_installation_date(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            app = TeslaSolarDashboard(
+                db_path=f"{tempdir}/test.sqlite3",
+                config_path=f"{tempdir}/tesla_auth.json",
+                download_root=f"{tempdir}/archive",
+            )
+            tesla = mock.Mock()
+            tesla.api.return_value = {
+                "response": {
+                    "site_name": "Home",
+                    "installation_time_zone": "America/Los_Angeles",
+                    "installation_date": "2024-01-15",
+                }
+            }
+
+            os.makedirs(os.path.join(tempdir, "archive", "12345", "power"), exist_ok=True)
+            Path(os.path.join(tempdir, "archive", "12345", "power", "2024-02-20.csv")).write_text("timestamp,solar_power\n")
+
+            plan = app._build_site_sync_plan(
+                tesla,
+                {"site_id": "12345", "site_name": "Home"},
+                {"time_zone": "America/Los_Angeles"},
+                end_date=dt.date(2024, 2, 20),
+                fallback_start_date=dt.date(2020, 1, 1),
+                warning_messages=[],
+            )
+
+            self.assertTrue(plan.day_windows)
+            self.assertEqual(plan.day_windows[0].day_date, dt.date(2024, 1, 15))
+            self.assertEqual(plan.day_windows[-1].day_date, dt.date(2024, 2, 20))
+
+
 class ServerTests(unittest.TestCase):
     def test_client_disconnect_errors_are_detected(self) -> None:
         self.assertTrue(is_client_disconnect_error(BrokenPipeError()))
