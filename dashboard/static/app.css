@@ -50,27 +50,45 @@ code {
   display: grid;
   gap: 18px;
   grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.9fr);
-  align-items: end;
+  align-items: stretch;
   padding: 22px 24px;
   border: 1px solid var(--panel-border);
   border-radius: 0;
   background: var(--panel);
 }
 
-.eyebrow {
-  margin-bottom: 10px;
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
 h1 {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: clamp(2rem, 3vw, 2.8rem);
   line-height: 1.02;
   letter-spacing: -0.035em;
+}
+
+.hero-title-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+.hero-logo {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+}
+
+.version-badge {
+  align-self: flex-end;
+  margin-bottom: 4px;
+  padding: 2px 9px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 0;
+  background: rgba(245, 158, 11, 0.08);
+  white-space: nowrap;
 }
 
 .subtitle {
@@ -83,68 +101,59 @@ h1 {
 
 .hero-status-grid {
   display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: flex-end;
+  gap: 6px;
 }
 
-.hero-status-label {
-  color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.hero-status-icon-badge,
-.hero-status-next-badge {
+.hero-status-badge {
   position: relative;
-  border: 1px solid var(--panel-border);
-  background: rgba(16, 22, 30, 0.94);
-}
-
-.hero-status-icon-badge {
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--panel-border);
   border-radius: 0;
+  background: rgba(16, 22, 30, 0.94);
+  min-width: 180px;
+  width: 220px;
 }
 
-.hero-status-next-badge {
-  min-width: 138px;
-  max-width: 148px;
-  padding: 10px 12px;
-  border-radius: 0;
-}
-
-.hero-status-icon-badge.good,
-.hero-status-next-badge.good {
+.hero-status-badge.good {
   border-color: rgba(16, 185, 129, 0.3);
 }
 
-.hero-status-icon-badge.warning,
-.hero-status-next-badge.warning {
+.hero-status-badge.warning {
   border-color: rgba(245, 158, 11, 0.32);
 }
 
-.hero-status-icon-badge.error,
-.hero-status-next-badge.error {
+.hero-status-badge.error {
   border-color: rgba(239, 68, 68, 0.32);
 }
 
-.hero-status-icon-badge.info,
-.hero-status-next-badge.info {
+.hero-status-badge.info {
   border-color: rgba(59, 130, 246, 0.32);
 }
 
-.hero-status-next-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.hero-status-badge-text {
+  min-width: 0;
+}
+
+.hero-status-badge-label {
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1.3;
+}
+
+.hero-status-badge-value {
+  font-size: 0.85rem;
+  font-weight: 800;
+  line-height: 1.25;
+  white-space: nowrap;
 }
 
 .hero-status-icon-shell {
@@ -158,11 +167,6 @@ h1 {
   background: rgba(15, 20, 27, 0.78);
   color: var(--muted);
   flex: 0 0 auto;
-}
-
-.hero-status-icon-badge .hero-status-icon-shell {
-  width: 28px;
-  height: 28px;
 }
 
 .hero-status-icon-shell.good {
@@ -197,7 +201,7 @@ h1 {
 .hero-status-tooltip {
   position: absolute;
   right: 0;
-  bottom: calc(100% + 8px);
+  top: calc(100% + 8px);
   width: min(260px, calc(100vw - 48px));
   padding: 10px 12px;
   border: 1px solid var(--panel-border);
@@ -208,7 +212,7 @@ h1 {
   line-height: 1.45;
   opacity: 0;
   pointer-events: none;
-  transform: translateY(4px);
+  transform: translateY(-4px);
   transition: opacity 140ms ease, transform 140ms ease;
   z-index: 8;
 }
@@ -232,30 +236,27 @@ h1 {
   margin-top: 6px;
 }
 
-.hero-status-icon-badge:hover .hero-status-tooltip,
-.hero-status-icon-badge:focus-visible .hero-status-tooltip,
-.hero-status-icon-badge:focus-within .hero-status-tooltip {
+.hero-status-badge:hover .hero-status-tooltip,
+.hero-status-badge:focus-visible .hero-status-tooltip,
+.hero-status-badge:focus-within .hero-status-tooltip {
   opacity: 1;
+  pointer-events: auto;
   transform: translateY(0);
 }
 
-.hero-status-icon-badge:focus-visible {
+@keyframes icon-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.hero-status-badge.syncing .hero-status-icon {
+  animation: icon-spin 1.2s linear infinite;
+}
+
+.hero-status-badge:focus-visible {
   outline: 2px solid var(--accent-2);
   outline-offset: 3px;
-}
-
-.hero-status-next-lines {
-  margin-top: 8px;
-  display: grid;
-  gap: 1px;
-}
-
-.hero-status-date-line,
-.hero-status-time-line {
-  display: block;
-  font-size: 0.92rem;
-  font-weight: 800;
-  line-height: 1.2;
 }
 
 .layout {
@@ -748,7 +749,7 @@ button:hover {
 
 button[disabled] {
   opacity: 0.55;
-  cursor: wait;
+  cursor: not-allowed;
   transform: none;
 }
 
@@ -1261,13 +1262,15 @@ button[disabled] {
 }
 
 .day-quick-clear {
-  border-color: rgba(239, 68, 68, 0.38);
-  background: rgba(127, 29, 29, 0.18);
-  color: #fecaca;
+  border-color: var(--panel-border);
+  background: transparent;
+  color: var(--muted);
 }
 
 .day-quick-clear:hover {
-  background: rgba(127, 29, 29, 0.28);
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(127, 29, 29, 0.18);
+  color: #fecaca;
 }
 
 .selection-chips {
@@ -1665,6 +1668,26 @@ td:first-child {
   text-transform: uppercase;
 }
 
+.boot-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.boot-logo {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+}
+
+.boot-version {
+  margin-top: 2px;
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
 .boot-title {
   margin: 10px 0 8px;
   font-size: clamp(1.55rem, 3vw, 2rem);
@@ -1733,6 +1756,21 @@ td:first-child {
   .hero-frame {
     grid-template-columns: 1fr;
     padding: 18px;
+  }
+
+  .hero-logo {
+    width: 38px;
+    height: 38px;
+  }
+
+  .hero-status-grid {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .hero-status-badge {
+    min-width: 0;
   }
 
   .section-tabs-shell {

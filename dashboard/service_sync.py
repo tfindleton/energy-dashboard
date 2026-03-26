@@ -18,6 +18,8 @@ from .tesla_api import (
     unwrap_response,
 )
 
+MIN_SYNC_INTERVAL_SECONDS = 900  # 15 minutes between syncs
+
 
 @dataclass
 class MonthSyncPlan:
@@ -251,6 +253,27 @@ class ServiceSyncMixin(DashboardServiceBase):
     def sync(self, requested_site_id: Optional[str] = None) -> Dict[str, Any]:
         if not self.sync_lock.acquire(blocking=False):
             raise RuntimeError("A sync is already in progress.")
+        try:
+            last_sync_raw = self.get_sync_state("last_sync") or ""
+            if last_sync_raw:
+                try:
+                    last_sync_dt = dt.datetime.fromisoformat(
+                        last_sync_raw.replace("Z", "+00:00")
+                    )
+                    elapsed = (
+                        dt.datetime.now(dt.timezone.utc) - last_sync_dt
+                    ).total_seconds()
+                    if elapsed < MIN_SYNC_INTERVAL_SECONDS:
+                        remaining = int(MIN_SYNC_INTERVAL_SECONDS - elapsed)
+                        mins, secs = divmod(remaining, 60)
+                        raise RuntimeError(
+                            f"Please wait {mins}m {secs}s before syncing again."
+                        )
+                except ValueError:
+                    pass
+        except RuntimeError:
+            self.sync_lock.release()
+            raise
         sync_started_at = utc_now_iso()
         self.set_sync_state("last_sync_error", "")
         self._set_sync_progress(

@@ -4,13 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Energy Dashboard</title>
+  <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body class="boot-loading">
   <div id="bootOverlay" class="boot-overlay" role="status" aria-live="polite">
     <div class="boot-card">
       <div class="boot-spinner" aria-hidden="true"></div>
-      <div class="boot-label">Energy Dashboard</div>
+      <div class="boot-brand">
+        <img src="/static/logo.svg" alt="" class="boot-logo" aria-hidden="true">
+        <div>
+          <div class="boot-label">Energy Dashboard</div>
+          <div class="boot-version">v{{VERSION}}</div>
+        </div>
+      </div>
       <h2 id="bootTitle" class="boot-title">Loading dashboard</h2>
       <p id="bootMessage" class="boot-message">Checking local status and preparing your views.</p>
     </div>
@@ -18,8 +25,11 @@
   <header class="hero">
     <div class="hero-inner hero-frame">
       <div class="hero-copy">
-        <div class="eyebrow">Local Tesla Energy Analytics</div>
-        <h1>Energy Dashboard</h1>
+        <div class="hero-title-row">
+          <img src="/static/logo.svg" alt="Energy Dashboard logo" class="hero-logo">
+          <h1>Energy Dashboard</h1>
+          <span class="version-badge">v{{VERSION}}</span>
+        </div>
         <p class="subtitle">
           Compare solar generation, home usage, grid export, and grid import by day, ISO week,
           month, or year-to-date. Use the custom trend view to inspect seasonal drift, load shifts,
@@ -42,18 +52,6 @@
 
     <section class="panel section-panel" id="signInPanel" data-section-view="signin">
       <div id="signInDetails">
-      <div id="connectedAccountPanel" class="account-panel" hidden>
-        <div class="account-main">
-          <div class="compact-label">Connected Account</div>
-          <div id="connectedAccountEmail" class="account-value">Masked for screenshots</div>
-          <div class="subtle">Email stays masked by default. Reveal it only when needed.</div>
-        </div>
-        <div class="account-actions">
-          <button id="revealEmailButton" type="button" class="secondary">Reveal Email</button>
-          <button id="hideEmailButton" type="button" class="secondary" hidden>Hide Email</button>
-          <button id="connectedLogoutButton" type="button">Sign Out</button>
-        </div>
-      </div>
       <div id="wizardIntro">
       <p class="subtle">
         This app uses the same local-browser flow as <code>tesla-solar-download</code>. Work through
@@ -256,7 +254,6 @@
         <svg id="dayCompareChart" class="chart" viewBox="0 0 960 420" preserveAspectRatio="none"></svg>
       </div>
       <div id="dayCompareHighlights" class="day-compare-highlights"></div>
-      <div id="dayCompareLegend" class="legend" hidden></div>
       <div id="dayCompareTable" class="table-wrap" hidden></div>
     </section>
 

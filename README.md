@@ -1,4 +1,14 @@
-# Energy Dashboard
+<p align="center">
+  <img src="dashboard/static/logo.svg" alt="Energy Dashboard" width="96" height="96">
+</p>
+
+<h1 align="center">Energy Dashboard</h1>
+
+<p align="center">
+  Self-hosted Tesla energy and Powerwall analytics
+</p>
+
+---
 
 Energy Dashboard is a self-hosted web app for Tesla home energy and Powerwall data. Docker is the recommended setup path, and a local Python workflow is also available if you prefer to run it directly on your host.
 
@@ -17,9 +27,10 @@ This project is standalone. It does not shell out to `tesla-solar-download`, and
 - Flat local web UI for Tesla energy history
 - Compare same day, ISO week, month, and year-to-date across years
 - Trend, diagnostics, insight, and day-compare views
-- Manual sync plus scheduled background sync
+- Manual sync plus scheduled background sync with 15-minute cooldown
 - CSV-first archive model with SQLite cache
 - Container-friendly persistent storage under a single data mount
+- Live status badges for sign-in, sync, and next scheduled sync
 
 ## Docker Quick Start
 
@@ -60,6 +71,7 @@ Container defaults:
 
 - port `8000`
 - auto sync cron `0 1 * * *` (daily at 1:00 AM local server time)
+- 15-minute minimum interval between syncs to stay within Tesla API rate limits
 - full-history syncs reuse the local archive and only download missing Tesla files
 - DB path `/data/dashboard.sqlite3`
 - auth config `/data/tesla_auth.json`
@@ -127,6 +139,16 @@ Behavior:
 - the current day is refreshed as `.partial.csv`
 - SQLite is upserted from the local CSV archive after each sync
 - legacy root-level `download/` archives are migrated and imported automatically
+
+## Versioning
+
+The app version is defined once in `dashboard/__init__.py`:
+
+```python
+__version__ = "0.1.4"
+```
+
+`pyproject.toml` reads the version dynamically from that attribute, so `pip install` and CI/CD tagging both use the same source. The version is displayed in the web UI header and returned by the `/api/status` endpoint.
 
 ## Local Python
 

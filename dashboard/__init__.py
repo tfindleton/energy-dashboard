@@ -1,3 +1,5 @@
+__version__ = "0.1.4"
+
 from .common import (
     ARCHIVE_IMPORT_SCHEMA_VERSION,
     aggregate_daily_history_rows,
@@ -17,6 +19,7 @@ from .service import TeslaSolarDashboard, extract_history_rows
 from .cli import main, normalize_cli_args
 
 __all__ = [
+    '__version__',
     'ARCHIVE_IMPORT_SCHEMA_VERSION',
     'TeslaSolarDashboard',
     'aggregate_daily_history_rows',

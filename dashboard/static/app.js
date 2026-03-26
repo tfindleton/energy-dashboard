@@ -704,24 +704,8 @@ function setStepState(id, { active = false, completed = false } = {}) {
 }
 
 function updateSignInPanel(status) {
-  const connected = Boolean(status.auth_configured);
   const details = $("signInDetails");
-  const email = (status.config?.email || "").trim();
-  const accountPanel = $("connectedAccountPanel");
-  const revealButton = $("revealEmailButton");
-  const hideButton = $("hideEmailButton");
-
   details.hidden = false;
-  if (!connected) {
-    accountPanel.hidden = true;
-    state.revealEmail = false;
-    return;
-  }
-
-  $("connectedAccountEmail").textContent = email ? maskEmail(email, state.revealEmail) : "Masked for screenshots";
-  accountPanel.hidden = false;
-  revealButton.hidden = state.revealEmail;
-  hideButton.hidden = !state.revealEmail;
 }
 
 function updateWizard(status) {
@@ -1158,7 +1142,13 @@ function applyDayCompareQuick(preset) {
 
 function ensureDayCompareSelection() {
   if (!$("dayCompareDate").value && state.status?.default_anchor_date) {
-    $("dayCompareDate").value = state.status.default_anchor_date;
+    const anchor = parseDateInput(state.status.default_anchor_date);
+    const today = parseDateInput(formatDateInput(new Date()));
+    if (anchor && today && anchor >= today) {
+      $("dayCompareDate").value = formatDateInput(addDays(today, -1));
+    } else {
+      $("dayCompareDate").value = state.status.default_anchor_date;
+    }
   }
   if (state.dayCompareDates.length) {
     renderDayCompareSelection();
@@ -1665,7 +1655,8 @@ function renderHeroStatus(status) {
         value: "Syncing Now",
         detail: status.sync_progress?.message || "Updating the local Tesla cache and SQLite data.",
         tone: "info",
-        icon: "refresh"
+        icon: "refresh",
+        syncing: true
       }
     : status.last_sync_error
       ? {
@@ -1707,13 +1698,14 @@ function renderHeroStatus(status) {
                 icon: "refresh"
               };
 
-  const nextSyncLines = status.auto_sync_enabled
+  const nextSyncValue = status.auto_sync_enabled
     ? formatDateTimeLines(status.auto_sync_next_run)
     : { dateLine: "Manual Only", timeLine: "" };
   const nextSyncCard = {
     label: "Next Sync",
-    dateLine: nextSyncLines.dateLine,
-    timeLine: nextSyncLines.timeLine,
+    value: nextSyncValue.timeLine
+      ? `${nextSyncValue.dateLine} ${nextSyncValue.timeLine}`
+      : nextSyncValue.dateLine,
     detail: status.auto_sync_enabled
       ? (status.auto_sync_description || "Automatic sync is enabled.")
       : "Automatic sync is disabled. Manual sync is still available.",
@@ -1721,34 +1713,30 @@ function renderHeroStatus(status) {
     icon: "clock"
   };
 
-  node.innerHTML = `
-    ${[signInCard, syncCard].map((card) => `
-      <article
-        class="hero-status-icon-badge ${escapeHtml(card.tone || "")}" tabindex="0"
-        aria-label="${escapeHtml(`${card.label}: ${card.value}`)}">
-        <div class="hero-status-icon-shell ${escapeHtml(card.tone || "")}">
-          ${iconMarkup(card.icon, "hero-status-icon")}
-        </div>
-        <div class="hero-status-tooltip" role="tooltip">
-          <div class="hero-status-tooltip-label">${escapeHtml(card.label)}</div>
-          <div class="hero-status-tooltip-value">${escapeHtml(card.value)}</div>
-          <div class="hero-status-tooltip-body">${escapeHtml(card.detail)}</div>
-        </div>
-      </article>
-    `).join("")}
-    <article class="hero-status-next-badge ${escapeHtml(nextSyncCard.tone || "")}">
-      <div class="hero-status-next-head">
-        <div class="hero-status-icon-shell ${escapeHtml(nextSyncCard.tone || "")}">
-          ${iconMarkup(nextSyncCard.icon, "hero-status-icon")}
-        </div>
-        <div class="hero-status-label">${escapeHtml(nextSyncCard.label)}</div>
+  const allCards = [signInCard, syncCard, nextSyncCard];
+  const html = allCards.map((card) => `
+    <article
+      class="hero-status-badge ${escapeHtml(card.tone || "")}${card.syncing ? " syncing" : ""}" tabindex="0"
+      aria-label="${escapeHtml(`${card.label}: ${card.value}`)}">
+      <div class="hero-status-icon-shell ${escapeHtml(card.tone || "")}">
+        ${iconMarkup(card.icon, "hero-status-icon")}
       </div>
-      <div class="hero-status-next-lines">
-        <span class="hero-status-date-line">${escapeHtml(nextSyncCard.dateLine)}</span>
-        ${nextSyncCard.timeLine ? `<span class="hero-status-time-line">${escapeHtml(nextSyncCard.timeLine)}</span>` : ""}
+      <div class="hero-status-badge-text">
+        <div class="hero-status-badge-label">${escapeHtml(card.label)}</div>
+        <div class="hero-status-badge-value">${escapeHtml(card.value)}</div>
+      </div>
+      <div class="hero-status-tooltip" role="tooltip">
+        <div class="hero-status-tooltip-label">${escapeHtml(card.label)}</div>
+        <div class="hero-status-tooltip-value">${escapeHtml(card.value)}</div>
+        <div class="hero-status-tooltip-body">${escapeHtml(card.detail)}</div>
       </div>
     </article>
-  `;
+  `).join("");
+  if (node.dataset.lastHtml === html) {
+    return;
+  }
+  node.dataset.lastHtml = html;
+  node.innerHTML = html;
 }
 
 function renderSummary(status) {
@@ -2005,7 +1993,11 @@ function inspectDiagnosticDay(dateText, metricKey) {
 }
 
 function renderLegend(nodeId, series) {
-  $(nodeId).innerHTML = (series || []).map((item) => `
+  const node = $(nodeId);
+  if (!node) {
+    return;
+  }
+  node.innerHTML = (series || []).map((item) => `
     <div class="legend-item">
       <span class="legend-swatch" style="background:${escapeHtml(item.color)}"></span>
       <span>${escapeHtml(item.label)}</span>
@@ -2722,11 +2714,7 @@ async function finishTeslaLogin() {
 
 async function logoutTesla(event) {
   const button = event?.currentTarget instanceof HTMLElement ? event.currentTarget : $("logoutButton");
-  const otherButton = button.id === "connectedLogoutButton" ? $("logoutButton") : $("connectedLogoutButton");
   setButtonBusy(button, true, "Signing Out...");
-  if (otherButton) {
-    otherButton.disabled = true;
-  }
   setSetupStatus("Clearing Tesla session...");
   try {
     await fetchJson("/api/auth/logout", {
@@ -2744,24 +2732,13 @@ async function logoutTesla(event) {
     setSetupStatus(error.message, "error");
   } finally {
     setButtonBusy(button, false);
-    if (otherButton) {
-      otherButton.disabled = false;
-    }
   }
 }
 
 function revealEmail() {
-  state.revealEmail = true;
-  if (state.status) {
-    updateSignInPanel(state.status);
-  }
 }
 
 function hideEmail() {
-  state.revealEmail = false;
-  if (state.status) {
-    updateSignInPanel(state.status);
-  }
 }
 
 async function saveSyncSchedule() {
@@ -2987,9 +2964,6 @@ function pageComparisonWindow(direction) {
 
 function wireEvents() {
   $("startLoginButton").addEventListener("click", startTeslaLogin);
-  $("revealEmailButton").addEventListener("click", revealEmail);
-  $("hideEmailButton").addEventListener("click", hideEmail);
-  $("connectedLogoutButton").addEventListener("click", logoutTesla);
   $("openLoginLinkButton").addEventListener("click", openGeneratedLoginLink);
   $("copyLoginLinkButton").addEventListener("click", () => {
     copyGeneratedLoginLink().catch((error) => setSetupStatus(error.message, "error"));

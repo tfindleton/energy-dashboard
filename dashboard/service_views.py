@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any, Dict, List, Optional, Sequence
 
+from . import __version__
 from .common import DAY_COMPARE_DAILY_TOTAL_COLUMNS, parse_dateish, parse_datetime, utc_now
 from .payloads import (
     build_comparison_payload,
@@ -110,6 +111,7 @@ class ServiceViewsMixin(DashboardServiceBase):
         if self.config_warning:
             message = f"{self.config_warning} {message}".strip()
         return {
+            "version": __version__,
             "library_ready": self.teslapy_available(),
             "auth_configured": self.auth_configured(),
             "auth_login_ready": self.auth_login_ready(),

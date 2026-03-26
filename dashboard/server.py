@@ -10,6 +10,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional
 
+from . import __version__
 from .common import (
     guess_content_type,
     INDEX_TEMPLATE_PATH,
@@ -103,7 +104,7 @@ class BackgroundSyncWorker:
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
-    server_version = "TeslaSolarDashboard/0.1"
+    server_version = f"TeslaSolarDashboard/{__version__}"
 
     @property
     def app(self) -> TeslaSolarDashboard:
@@ -113,7 +114,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         try:
             if parsed.path == "/":
-                self.respond_html(read_text_file(INDEX_TEMPLATE_PATH))
+                html = read_text_file(INDEX_TEMPLATE_PATH).replace("{{VERSION}}", __version__)
+                self.respond_html(html)
                 return
             if parsed.path.startswith("/static/"):
                 static_path = resolve_static_path(parsed.path[len("/static/"):])

@@ -82,7 +82,7 @@ class ServiceAuthMixin(DashboardServiceBase):
             "sync_cron": self.effective_sync_cron(),
             "auth_pending": bool(pending_auth),
             "pending_auth_url": pending_auth.get("authorization_url", ""),
-            "download_root": self.download_root,
+            "download_root": os.path.relpath(self.download_root),
         }
 
     def save_user_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
