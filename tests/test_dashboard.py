@@ -41,7 +41,7 @@ class FakeTeslaSession:
     def new_state(self) -> str:
         return "state-123"
 
-    def new_code_verifier(self) -> str:
+    def new_code_verifier(self) -> bytes:
         return b"verifier-123"
 
     def authorization_url(self, state: str, code_verifier: str) -> str:
@@ -422,7 +422,7 @@ class DiagnosticTests(unittest.TestCase):
             },
         ]
 
-        with mock.patch("dashboard.payloads.dt.date", FakeDate):
+        with mock.patch("dashboard.payload_diagnostics.dt.date", FakeDate):
             payload = build_diagnostics_payload(rows)
 
         self.assertIn("through 2026-07-01", payload["summary"])

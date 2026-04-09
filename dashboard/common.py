@@ -262,7 +262,7 @@ def parse_dateish(value: Any) -> Optional[dt.date]:
         if timestamp > 10_000_000_000:
             timestamp /= 1000.0
         try:
-            return dt.datetime.utcfromtimestamp(timestamp).date()
+            return dt.datetime.fromtimestamp(timestamp, tz=dt.timezone.utc).date()
         except (OverflowError, OSError, ValueError):
             return None
     if isinstance(value, str):

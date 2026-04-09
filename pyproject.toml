@@ -20,4 +20,4 @@ include = ["dashboard"]
 version = {attr = "dashboard.__version__"}
 
 [tool.setuptools.package-data]
-dashboard = ["static/*.css", "static/*.js", "static/*.svg", "templates/*.html"]
+dashboard = ["static/*.css", "static/*.js", "static/*.png", "static/*.svg", "templates/*.html"]
