@@ -1,13 +1,13 @@
 const METRICS = [
   { key: "solar_generation", label: "Solar generation", color: "#d97706" },
   { key: "home_usage", label: "Home usage", color: "#1d4ed8" },
-  { key: "grid_export", label: "Grid export", color: "#059669" },
-  { key: "grid_import", label: "Grid import", color: "#dc2626" }
+  { key: "grid_import", label: "Grid import", color: "#dc2626" },
+  { key: "grid_export", label: "Grid export", color: "#059669" }
 ];
 
 const DAY_COMPARE_METRICS = [
-  { key: "load_power", label: "Home usage", color: "#1d4ed8" },
   { key: "solar_power", label: "Solar generation", color: "#d97706" },
+  { key: "load_power", label: "Home usage", color: "#1d4ed8" },
   { key: "grid_import_power", label: "Grid import", color: "#dc2626" },
   { key: "grid_export_power", label: "Grid export", color: "#059669" }
 ];
@@ -1434,7 +1434,7 @@ function selectedPatternMetrics() {
 }
 
 function buildDayCompareMetricPills() {
-  const current = $("dayCompareMetric").value || "load_power";
+  const current = $("dayCompareMetric").value || "solar_power";
   $("dayCompareMetricPills").innerHTML = DAY_COMPARE_METRICS.map((metric) => `
     <button
       type="button"
@@ -1446,7 +1446,7 @@ function buildDayCompareMetricPills() {
 }
 
 function setDayCompareMetric(metricKey) {
-  const nextMetric = DAY_COMPARE_METRICS.find((metric) => metric.key === metricKey)?.key || "load_power";
+  const nextMetric = DAY_COMPARE_METRICS.find((metric) => metric.key === metricKey)?.key || "solar_power";
   $("dayCompareMetric").value = nextMetric;
   document.querySelectorAll(".day-metric-pill").forEach((button) => {
     button.classList.toggle("active", button.dataset.metric === nextMetric);
@@ -2474,7 +2474,7 @@ async function loadDayCompare() {
   const params = new URLSearchParams({
     site_id: currentSiteId(),
     dates: state.dayCompareDates.join(","),
-    metric: $("dayCompareMetric").value || "load_power"
+    metric: $("dayCompareMetric").value || "solar_power"
   });
   const payload = await fetchJson(`/api/day-compare?${params.toString()}`);
   state.dayComparePayload = payload;
@@ -2916,28 +2916,49 @@ async function safeReloadAll(options = {}) {
   }
 }
 
-function applyTrendRange(range) {
-  const site = currentSite();
-  if (!site) {
-    return;
-  }
-  const end = parseDateInput(site.data_end || state.status?.default_anchor_date);
-  const startBound = parseDateInput(site.data_start || state.status?.default_trend_start);
+function quickRangeBounds(site, range) {
+  const end = parseDateInput(site?.data_end || state.status?.default_anchor_date);
+  const startBound = parseDateInput(site?.data_start || state.status?.default_trend_start);
   if (!end || !startBound) {
-    return;
+    return null;
   }
 
   let start = startBound;
   if (range === "90d") {
     start = maxDate(startBound, addDays(end, -89));
+  } else if (range === "ytd") {
+    start = maxDate(startBound, startOfYear(end));
   } else if (range === "1y") {
     start = maxDate(startBound, addDays(end, -364));
   } else if (range === "3y") {
     start = maxDate(startBound, addDays(end, -(365 * 3 - 1)));
   }
 
-  $("trendStart").value = formatDateInput(start);
-  $("trendEnd").value = formatDateInput(end);
+  return {
+    start: formatDateInput(start),
+    end: formatDateInput(end)
+  };
+}
+
+function applyQuickRange(target, range) {
+  const site = currentSite();
+  if (!site) {
+    return;
+  }
+  const bounds = quickRangeBounds(site, range);
+  if (!bounds) {
+    return;
+  }
+
+  if (target === "pattern") {
+    $("patternStart").value = bounds.start;
+    $("patternEnd").value = bounds.end;
+    loadPattern().catch((error) => setStatus(error.message, "error"));
+    return;
+  }
+
+  $("trendStart").value = bounds.start;
+  $("trendEnd").value = bounds.end;
   loadTrend().catch((error) => setStatus(error.message, "error"));
 }
 
@@ -3007,9 +3028,15 @@ function wireEvents() {
   });
   $("comparisonPrevButton").addEventListener("click", () => pageComparisonWindow(-1));
   $("comparisonNextButton").addEventListener("click", () => pageComparisonWindow(1));
+  $("compareMode").addEventListener("change", () => {
+    renderComparisonWindowNav();
+    loadComparison().catch((error) => setStatus(error.message, "error"));
+  });
   $("compareButton").addEventListener("click", () => loadComparison().catch((error) => setStatus(error.message, "error")));
   $("patternButton").addEventListener("click", () => loadPattern().catch((error) => setStatus(error.message, "error")));
+  $("patternValueMode").addEventListener("change", () => loadPattern().catch((error) => setStatus(error.message, "error")));
   $("trendButton").addEventListener("click", () => loadTrend().catch((error) => setStatus(error.message, "error")));
+  $("trendGranularity").addEventListener("change", () => loadTrend().catch((error) => setStatus(error.message, "error")));
   $("trendChartType").addEventListener("change", () => loadTrend().catch((error) => setStatus(error.message, "error")));
   $("siteSelect").addEventListener("change", () => {
     renderSummary(state.status || {});
@@ -3036,7 +3063,7 @@ function wireEvents() {
         renderGroupedBarChart("comparisonChart", filteredPayload);
       }
     }
-    if (event.target.id === "compareMode" || event.target.id === "anchorDate") {
+    if (event.target.id === "anchorDate") {
       renderComparisonWindowNav();
     }
   });
@@ -3051,7 +3078,7 @@ function wireEvents() {
     }
     const metricButton = event.target.closest(".day-metric-pill");
     if (metricButton instanceof HTMLElement) {
-      setDayCompareMetric(metricButton.dataset.metric || "load_power");
+      setDayCompareMetric(metricButton.dataset.metric || "solar_power");
       loadDayCompare().catch((error) => setStatus(error.message, "error"));
       return;
     }
@@ -3070,7 +3097,7 @@ function wireEvents() {
     }
   });
   document.querySelectorAll(".range-chip").forEach((button) => {
-    button.addEventListener("click", () => applyTrendRange(button.dataset.range || ""));
+    button.addEventListener("click", () => applyQuickRange(button.dataset.rangeTarget || "trend", button.dataset.range || ""));
   });
   document.querySelectorAll(".scope-chip").forEach((button) => {
     button.addEventListener("click", () => {

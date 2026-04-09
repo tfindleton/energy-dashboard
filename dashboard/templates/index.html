@@ -223,7 +223,7 @@
       </div>
       <div class="field day-compare-metric-field">
         <label for="dayCompareMetricPills">24-Hour Metric</label>
-        <input id="dayCompareMetric" type="hidden" value="load_power">
+        <input id="dayCompareMetric" type="hidden" value="solar_power">
         <div id="dayCompareMetricPills" class="metric-pills day-compare-metrics"></div>
       </div>
       <div class="day-compare-settings">
@@ -350,6 +350,13 @@
         </div>
       </div>
       <div id="patternMetricPills" class="metric-pills"></div>
+      <div class="range-pills">
+        <button type="button" class="secondary range-chip" data-range-target="pattern" data-range="90d">90D</button>
+        <button type="button" class="secondary range-chip" data-range-target="pattern" data-range="ytd">YTD</button>
+        <button type="button" class="secondary range-chip" data-range-target="pattern" data-range="1y">1Y</button>
+        <button type="button" class="secondary range-chip" data-range-target="pattern" data-range="3y">3Y</button>
+        <button type="button" class="secondary range-chip" data-range-target="pattern" data-range="all">All</button>
+      </div>
       <div id="patternMeta" class="meta"></div>
       <div id="patternLegend" class="legend"></div>
       <div class="chart-shell">
@@ -395,10 +402,11 @@
       </div>
       <div id="metricPills" class="metric-pills"></div>
       <div class="range-pills">
-        <button type="button" class="secondary range-chip" data-range="90d">90D</button>
-        <button type="button" class="secondary range-chip" data-range="1y">1Y</button>
-        <button type="button" class="secondary range-chip" data-range="3y">3Y</button>
-        <button type="button" class="secondary range-chip" data-range="all">All</button>
+        <button type="button" class="secondary range-chip" data-range-target="trend" data-range="90d">90D</button>
+        <button type="button" class="secondary range-chip" data-range-target="trend" data-range="ytd">YTD</button>
+        <button type="button" class="secondary range-chip" data-range-target="trend" data-range="1y">1Y</button>
+        <button type="button" class="secondary range-chip" data-range-target="trend" data-range="3y">3Y</button>
+        <button type="button" class="secondary range-chip" data-range-target="trend" data-range="all">All</button>
       </div>
       <div id="trendMeta" class="meta"></div>
       <div id="trendLegend" class="legend"></div>
