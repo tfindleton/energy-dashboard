@@ -12,13 +12,13 @@
 
 Energy Dashboard is a self-hosted web app for Tesla home energy and Powerwall data. Docker is the recommended setup path, and a local Python workflow is also available if you prefer to run it directly on your host.
 
-It uses the same local-browser Tesla sign-in pattern as `netzero-labs/tesla-solar-download`:
+It supports a one-time native Tesla sign-in through the Tesla Auth helper:
 
 - no Tesla Fleet API app
 - no public callback URL
 - user signs in on Tesla's own page
-- the final Tesla URL is pasted back into the app once
-- the Tesla session is cached locally for future syncs
+- the native helper captures `tesla://auth/callback` and provides an access/refresh token pair
+- the dashboard validates that pair once and caches the Tesla session locally
 
 This project is standalone. It does not shell out to `tesla-solar-download`, and it keeps its runtime files in a single predictable data folder. Legacy root-level installs are migrated into that layout automatically on startup.
 
@@ -65,6 +65,8 @@ The container keeps all runtime state under `/data`:
 
 That auth JSON contains your Tesla session cache. Keep the mounted volume private and out of source control. The default ignore rules in this repo already exclude the local auth file, database, and download archive.
 
+The sign-in page accepts Tesla access and refresh tokens, so keep the dashboard on localhost or behind trusted HTTPS authentication. Do not expose the setup UI directly to the public internet.
+
 ## Docker Configuration
 
 Container defaults:
@@ -104,15 +106,18 @@ The image also works with Podman. If your host uses SELinux, add a relabel suffi
 
 ## Sign In
 
-The app uses a guided TeslaPy local browser flow:
+The recommended setup uses the native [Tesla Auth helper](https://github.com/adriankumpf/tesla_auth/releases/latest), which embeds Tesla's login page and captures the app callback without browser developer tools:
 
-1. Enter your Tesla account email in the page.
-2. Click `Start Sign In`.
-3. Sign in on Tesla's page.
-4. Tesla will end on a `Page Not Found` screen at `auth.tesla.com`. That is expected.
-5. Copy the full URL from that final Tesla page.
-6. Paste it into the app and click `Finish Sign In`.
-7. Click `Sync Now`.
+1. Enter your Tesla account email in the dashboard.
+2. Download the helper for your operating system from its GitHub release page. On Windows it uses Microsoft Edge WebView2.
+3. Run `tesla_auth --clear-browsing-data`, then complete Tesla login and MFA in its native window.
+4. Copy both the **access token** and **refresh token** from the same result window.
+5. Paste both into the dashboard and click `Import Token Pair`.
+6. Click `Sync Now`.
+
+Tesla currently requires the original code-exchange access token to bootstrap the first Owner API request. Exchanging only a refresh token before that first request produces `403 Forbidden`, even though the token refresh itself succeeds. The dashboard therefore validates the fresh pair with `GET /api/1/products`, then saves it in the same private local auth file used by the existing flow. Neither token is returned in an API response. After the initial bootstrap, normal refresh-token rotation is automatic.
+
+The dashboard intentionally does not include a desktop-browser fallback. Tesla's custom app callback and verification page make that path unreliable in ordinary browsers, while Tesla Auth captures the same callback directly in its native window.
 
 After that, the cached Tesla session is reused for scheduled and manual syncs until it expires or you sign out.
 
@@ -145,7 +150,7 @@ Behavior:
 The app version is defined once in `dashboard/__init__.py`:
 
 ```python
-__version__ = "0.1.4"
+__version__ = "0.1.5"
 ```
 
 `pyproject.toml` reads the version dynamically from that attribute, so `pip install` and CI/CD tagging both use the same source. The version is displayed in the web UI header and returned by the `/api/status` endpoint.
@@ -160,7 +165,7 @@ Install:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install --upgrade -r requirements.txt
 ```
 
 Run the dashboard from the repo root:
@@ -184,8 +189,6 @@ On Windows, you can also run `start-local.bat`. It creates `.venv` with `uv`, in
 Useful local commands:
 
 ```bash
-python3 -m dashboard auth-start --email you@example.com
-python3 -m dashboard auth-finish --url "https://auth.tesla.com/void/callback?code=..."
 python3 -m dashboard sync
 python3 -m dashboard serve --sync-cron off
 python3 -m dashboard serve --sync-cron "0 6 * * 1-5"

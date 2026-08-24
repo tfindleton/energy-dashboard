@@ -28,7 +28,7 @@ def normalize_cli_args(argv: Sequence[str]) -> List[str]:
         return ["serve"]
     if any(flag in args for flag in ("-h", "--help")):
         return args
-    commands = {"auth-start", "auth-finish", "sync", "serve"}
+    commands = {"sync", "serve"}
     if any(arg in commands for arg in args):
         return args
     return ["serve"] + args
@@ -41,13 +41,6 @@ def build_parser() -> argparse.ArgumentParser:
         description="Sync Tesla energy history locally and serve a comparison dashboard."
     )
     subparsers = parser.add_subparsers(dest="command")
-
-    auth_start = subparsers.add_parser("auth-start", help="Print a Tesla sign-in URL using TeslaPy.")
-    auth_start.add_argument("--email", required=True, help="Tesla account email address.")
-    auth_start.add_argument("--open-browser", action="store_true", help="Open the Tesla sign-in URL in your browser.")
-
-    auth_finish = subparsers.add_parser("auth-finish", help="Finish TeslaPy sign-in from the final Tesla URL.")
-    auth_finish.add_argument("--url", required=True, help="Full URL from Tesla's final Page Not Found screen.")
 
     sync = subparsers.add_parser("sync", help="Download and import the full Tesla archive into SQLite.")
     sync.add_argument("--site-id", help="Optional energy site id override.")
@@ -138,21 +131,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(message)
 
     app = TeslaSolarDashboard(db_path=db_path, config_path=config_path, download_root=download_root)
-
-    if command == "auth-start":
-        payload = app.start_web_login({"email": args.email})
-        url = payload.get("authorization_url", "")
-        print(url)
-        if args.open_browser:
-            import webbrowser
-
-            webbrowser.open(url)
-        return 0
-
-    if command == "auth-finish":
-        payload = app.finish_web_login(args.url)
-        print(json.dumps(payload, indent=2))
-        return 0
 
     if command == "sync":
         result = app.sync(requested_site_id=args.site_id)

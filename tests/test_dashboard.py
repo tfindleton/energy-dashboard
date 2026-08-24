@@ -1,7 +1,11 @@
+import base64
 import datetime as dt
+import json
 import os
 from pathlib import Path
 import tempfile
+import time
+import types
 import unittest
 from unittest import mock
 
@@ -22,15 +26,52 @@ from dashboard import (
     resolve_tzinfo,
 )
 from dashboard.cli import build_parser, migrate_legacy_storage_layout, resolve_runtime_paths
-from dashboard.common import DEFAULT_DB_PATH, default_config_path_for_db_path, default_download_root_for_db_path
+from dashboard.common import (
+    DEFAULT_DB_PATH,
+    default_config_path_for_db_path,
+    default_download_root_for_db_path,
+    import_teslapy,
+)
 from dashboard.server import http_request_logging_enabled, is_client_disconnect_error
 from dashboard.service import extract_installation_date, extract_site_name, extract_timezone
+
+
+def fake_jwt(payload: dict) -> str:
+    def encode(value: dict) -> str:
+        raw = json.dumps(value, separators=(",", ":")).encode("utf-8")
+        return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+    return f"{encode({'alg': 'none', 'typ': 'JWT'})}.{encode(payload)}.test-signature"
+
+
+def native_token_pair(subject: str = "user-123") -> tuple[str, str]:
+    now = int(time.time())
+    access_token = fake_jwt(
+        {
+            "aud": ["https://owner-api.teslamotors.com/"],
+            "exp": now + 28_800,
+            "iat": now,
+            "sub": subject,
+            "x-enc": "session-marker",
+        }
+    )
+    refresh_token = fake_jwt(
+        {
+            "aud": "https://auth.tesla.com/oauth2/v3/token",
+            "exp": now + 7_776_000,
+            "iat": now,
+            "sub": subject,
+        }
+    )
+    return access_token, refresh_token
 
 
 class FakeTeslaSession:
     def __init__(self, authorized: bool = False) -> None:
         self.authorized = authorized
-        self.fetch_token_calls = []
+        self.refresh_token_calls = []
+        self.api_calls = []
+        self.api_error = None
 
     def __enter__(self) -> "FakeTeslaSession":
         return self
@@ -38,18 +79,15 @@ class FakeTeslaSession:
     def __exit__(self, exc_type, exc, tb) -> bool:
         return False
 
-    def new_state(self) -> str:
-        return "state-123"
-
-    def new_code_verifier(self) -> bytes:
-        return b"verifier-123"
-
-    def authorization_url(self, state: str, code_verifier: str) -> str:
-        return f"https://auth.tesla.com/oauth2/v3/authorize?state={state}&code_verifier={code_verifier}"
-
-    def fetch_token(self, authorization_response: str) -> None:
-        self.fetch_token_calls.append(authorization_response)
+    def refresh_token(self, refresh_token: str) -> None:
+        self.refresh_token_calls.append(refresh_token)
         self.authorized = True
+
+    def api(self, name: str):
+        self.api_calls.append(name)
+        if self.api_error is not None:
+            raise self.api_error
+        return {"response": []}
 
 
 class NormalizationTests(unittest.TestCase):
@@ -939,6 +977,26 @@ class PowerArchiveTests(unittest.TestCase):
 
 
 class AuthFlowTests(unittest.TestCase):
+    def test_import_teslapy_rejects_versions_with_obsolete_callback(self) -> None:
+        old_teslapy = types.SimpleNamespace(__version__="2.9.1", HAS_HTTPX=False)
+
+        with mock.patch.dict("sys.modules", {"teslapy": old_teslapy}):
+            with self.assertRaisesRegex(RuntimeError, "TeslaPy 2.9.2 or newer"):
+                import_teslapy()
+
+    def test_import_teslapy_accepts_current_login_flow(self) -> None:
+        current_teslapy = types.SimpleNamespace(__version__="2.9.2", HAS_HTTPX=True)
+
+        with mock.patch.dict("sys.modules", {"teslapy": current_teslapy}):
+            self.assertIs(import_teslapy(), current_teslapy)
+
+    def test_import_teslapy_rejects_release_without_http2_transport(self) -> None:
+        release_teslapy = types.SimpleNamespace(__version__="2.9.2")
+
+        with mock.patch.dict("sys.modules", {"teslapy": release_teslapy}):
+            with self.assertRaisesRegex(RuntimeError, "TeslaPy build with HTTP/2 support"):
+                import_teslapy()
+
     def test_save_user_config_clears_cached_session_when_email_changes(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             app = TeslaSolarDashboard(
@@ -963,56 +1021,129 @@ class AuthFlowTests(unittest.TestCase):
             self.assertNotIn("teslapy_cache", config)
             self.assertNotIn("pending_auth", config)
 
-    def test_start_web_login_saves_pending_auth(self) -> None:
+    def test_import_token_pair_bootstraps_owner_api_and_clears_pending_auth(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             app = TeslaSolarDashboard(
                 db_path=f"{tempdir}/test.sqlite3",
                 config_path=f"{tempdir}/tesla_auth.json",
                 download_root=f"{tempdir}/archive",
             )
-            fake_session = FakeTeslaSession(authorized=False)
+            app.save_config({"pending_auth": {"state": "stale"}})
+            fake_session = FakeTeslaSession(authorized=True)
+            access_token, refresh_token = native_token_pair()
 
             with mock.patch.object(app, "_tesla_session", return_value=fake_session):
-                payload = app.start_web_login({"email": "user@example.com", "energy_site_id": "123"})
-
-            config = app.load_config()
-
-            self.assertIn("authorization_url", payload)
-            self.assertFalse(payload["already_authorized"])
-            self.assertEqual(config["email"], "user@example.com")
-            self.assertEqual(config["energy_site_id"], "123")
-            self.assertEqual(config["pending_auth"]["state"], "state-123")
-            self.assertEqual(config["pending_auth"]["code_verifier"], "verifier-123")
-            self.assertIn("authorization_url", config["pending_auth"])
-
-    def test_finish_web_login_clears_pending_auth(self) -> None:
-        with tempfile.TemporaryDirectory() as tempdir:
-            app = TeslaSolarDashboard(
-                db_path=f"{tempdir}/test.sqlite3",
-                config_path=f"{tempdir}/tesla_auth.json",
-                download_root=f"{tempdir}/archive",
-            )
-            app.save_config(
-                {
-                    "email": "user@example.com",
-                    "pending_auth": {
+                payload = app.import_token_pair(
+                    {
                         "email": "user@example.com",
-                        "state": "state-123",
-                        "code_verifier": "verifier-123",
-                    },
-                }
-            )
-            fake_session = FakeTeslaSession(authorized=False)
-
-            with mock.patch.object(app, "_tesla_session", return_value=fake_session):
-                payload = app.finish_web_login("https://auth.tesla.com/void/callback?code=abc")
+                        "energy_site_id": "123",
+                        "access_token": access_token,
+                        "refresh_token": refresh_token,
+                    }
+                )
 
             self.assertTrue(payload["authorized"])
-            self.assertEqual(
-                fake_session.fetch_token_calls,
-                ["https://auth.tesla.com/void/callback?code=abc"],
+            self.assertEqual(fake_session.refresh_token_calls, [])
+            self.assertEqual(fake_session.api_calls, ["PRODUCT_LIST"])
+            config = app.load_config()
+            self.assertEqual(config["email"], "user@example.com")
+            self.assertEqual(config["energy_site_id"], "123")
+            self.assertTrue(config["owner_api_bootstrapped"])
+            saved_token = config["teslapy_cache"]["user@example.com"]["sso"]
+            self.assertEqual(saved_token["access_token"], access_token)
+            self.assertEqual(saved_token["refresh_token"], refresh_token)
+            self.assertNotIn("pending_auth", config)
+
+    def test_import_token_pair_accepts_tesla_auth_json_without_top_level_token_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            app = TeslaSolarDashboard(
+                db_path=f"{tempdir}/test.sqlite3",
+                config_path=f"{tempdir}/tesla_auth.json",
+                download_root=f"{tempdir}/archive",
             )
-            self.assertNotIn("pending_auth", app.load_config())
+            fake_session = FakeTeslaSession(authorized=True)
+            access_token, refresh_token = native_token_pair()
+            token_json = json.dumps(
+                {"access_token": access_token, "refresh_token": refresh_token}
+            )
+
+            with mock.patch.object(app, "_tesla_session", return_value=fake_session):
+                app.import_token_pair(
+                    {
+                        "email": "user@example.com",
+                        "access_token": token_json,
+                        "refresh_token": token_json,
+                    }
+                )
+
+            self.assertEqual(fake_session.api_calls, ["PRODUCT_LIST"])
+            self.assertNotIn("access_token", app.load_config())
+            self.assertNotIn("refresh_token", app.load_config())
+
+    def test_import_token_pair_rejects_a_labeled_or_multiline_value(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            app = TeslaSolarDashboard(
+                db_path=f"{tempdir}/test.sqlite3",
+                config_path=f"{tempdir}/tesla_auth.json",
+                download_root=f"{tempdir}/archive",
+            )
+            access_token, _ = native_token_pair()
+
+            with self.assertRaisesRegex(RuntimeError, "Paste only the refresh token"):
+                app.import_token_pair(
+                    {
+                        "email": "user@example.com",
+                        "access_token": access_token,
+                        "refresh_token": "Refresh token: secret",
+                    }
+                )
+
+    def test_import_token_pair_rejects_tokens_from_different_sessions(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            app = TeslaSolarDashboard(
+                db_path=f"{tempdir}/test.sqlite3",
+                config_path=f"{tempdir}/tesla_auth.json",
+                download_root=f"{tempdir}/archive",
+            )
+            access_token, _ = native_token_pair("first-user")
+            _, refresh_token = native_token_pair("second-user")
+
+            with self.assertRaisesRegex(RuntimeError, "different Tesla sessions"):
+                app.import_token_pair(
+                    {
+                        "email": "user@example.com",
+                        "access_token": access_token,
+                        "refresh_token": refresh_token,
+                    }
+                )
+
+    def test_import_token_pair_clears_rejected_pair(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            app = TeslaSolarDashboard(
+                db_path=f"{tempdir}/test.sqlite3",
+                config_path=f"{tempdir}/tesla_auth.json",
+                download_root=f"{tempdir}/archive",
+            )
+            access_token, refresh_token = native_token_pair()
+            fake_session = FakeTeslaSession(authorized=True)
+            response = types.SimpleNamespace(status_code=403)
+            error = RuntimeError("403 Client Error: forbidden")
+            error.response = response
+            fake_session.api_error = error
+
+            with mock.patch.object(app, "_tesla_session", return_value=fake_session):
+                with self.assertRaisesRegex(RuntimeError, "paste both the access token"):
+                    app.import_token_pair(
+                        {
+                            "email": "user@example.com",
+                            "access_token": access_token,
+                            "refresh_token": refresh_token,
+                        }
+                    )
+
+            config = app.load_config()
+            self.assertNotIn("teslapy_cache", config)
+            self.assertNotIn("owner_api_bootstrapped", config)
 
     def test_status_payload_messages_reflect_install_and_sign_in_states(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
@@ -1023,28 +1154,17 @@ class AuthFlowTests(unittest.TestCase):
             )
 
             with mock.patch.object(app, "teslapy_available", return_value=False):
-                self.assertIn("pip install -r requirements.txt", app.status_payload()["message"])
+                self.assertIn("pip install --upgrade -r requirements.txt", app.status_payload()["message"])
 
             app.save_user_config({"email": "user@example.com"})
             with mock.patch.object(app, "teslapy_available", return_value=True), mock.patch.object(
                 app, "auth_configured", return_value=False
             ):
-                self.assertIn("Start Sign In", app.status_payload()["message"])
+                payload = app.status_payload()
 
-            app.save_config(
-                {
-                    "email": "user@example.com",
-                    "pending_auth": {
-                        "email": "user@example.com",
-                        "state": "state-123",
-                        "code_verifier": "verifier-123",
-                    },
-                }
-            )
-            with mock.patch.object(app, "teslapy_available", return_value=True), mock.patch.object(
-                app, "auth_configured", return_value=False
-            ):
-                self.assertIn("Paste the final Tesla URL", app.status_payload()["message"])
+            self.assertIn("Run Tesla Auth", payload["message"])
+            self.assertNotIn("auth_pending", payload)
+            self.assertNotIn("auth_pending", payload["config"])
 
     def test_status_payload_marks_missed_daily_sync(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:

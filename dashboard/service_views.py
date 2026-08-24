@@ -96,16 +96,13 @@ class ServiceViewsMixin(DashboardServiceBase):
                     else start_candidate.isoformat()
                 )
         if not self.teslapy_available():
-            message = "Install requirements first: `pip install -r requirements.txt`."
+            message = "Install or upgrade requirements: `pip install --upgrade -r requirements.txt`."
         elif sites:
             message = ""
         elif missing_login_fields:
-            message = "Enter your Tesla account email, then start sign-in."
+            message = "Enter your Tesla account email, then use the native Tesla Auth helper."
         elif not self.auth_configured():
-            if config.get("pending_auth"):
-                message = "Tesla login is in progress. Paste the final Tesla URL to finish sign-in."
-            else:
-                message = "Start Sign In, complete Tesla login, then paste the final Tesla URL here."
+            message = "Run Tesla Auth and import both tokens from the same fresh result."
         else:
             message = "No cached data yet. Run sync to import history."
         if self.config_warning:
@@ -115,7 +112,6 @@ class ServiceViewsMixin(DashboardServiceBase):
             "library_ready": self.teslapy_available(),
             "auth_configured": self.auth_configured(),
             "auth_login_ready": self.auth_login_ready(),
-            "auth_pending": bool(config.get("pending_auth")),
             "config": self.config_public_payload(),
             "sync_in_progress": self.sync_lock.locked(),
             "sync_progress": self.sync_progress_payload(),

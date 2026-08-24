@@ -690,10 +690,20 @@ h1 {
   align-items: end;
 }
 
-.wizard-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+.auth-helper-link {
+  color: #8bb4ff;
+  font-weight: 700;
+}
+
+.auth-helper-link:hover {
+  color: #b4ceff;
+}
+
+.auth-security-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
 }
 
 .row {

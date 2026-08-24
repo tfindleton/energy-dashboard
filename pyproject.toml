@@ -8,7 +8,11 @@ dynamic = ["version"]
 description = "Local Tesla energy CSV archive and comparison dashboard"
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = ["teslapy", "tzdata"]
+dependencies = [
+    "teslapy @ https://github.com/tdorssers/TeslaPy/archive/8380fb77152f48cb084671c436dc5816f68873f7.tar.gz",
+    "httpx[http2]>=0.27,<1",
+    "tzdata",
+]
 
 [project.scripts]
 tesla-energy-dashboard = "dashboard.cli:main"

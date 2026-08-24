@@ -7,6 +7,7 @@ import datetime as dt
 import json
 import mimetypes
 import os
+import re
 from typing import Any, Dict, List, Optional, Sequence
 
 try:
@@ -25,6 +26,7 @@ FULL_SYNC_FALLBACK_DAYS = 365 * 10
 DEFAULT_DIAGNOSTIC_WINDOW_DAYS = 2
 DEFAULT_SERVE_HOST = "0.0.0.0"
 DEFAULT_TESLAPY_TIMEOUT = 15
+MINIMUM_TESLAPY_VERSION = (2, 9, 2)
 ARCHIVE_IMPORT_SCHEMA_VERSION = "2"
 EXCLUDED_HISTORY_COLUMNS = (
     "grid_services_power",
@@ -96,7 +98,22 @@ def import_teslapy() -> Any:
     try:
         import teslapy  # type: ignore
     except ModuleNotFoundError as error:
-        raise RuntimeError("TeslaPy is not installed. Run `pip install -r requirements.txt`.") from error
+        raise RuntimeError("TeslaPy is not installed. Run `pip install --upgrade -r requirements.txt`.") from error
+
+    installed_version = str(getattr(teslapy, "__version__", "unknown"))
+    match = re.match(r"^(\d+)\.(\d+)\.(\d+)", installed_version)
+    parsed_version = tuple(int(part) for part in match.groups()) if match else (0, 0, 0)
+    if parsed_version < MINIMUM_TESLAPY_VERSION:
+        minimum_version = ".".join(str(part) for part in MINIMUM_TESLAPY_VERSION)
+        raise RuntimeError(
+            f"TeslaPy {minimum_version} or newer is required for Tesla's current login flow; "
+            f"found {installed_version}. Run `pip install --upgrade -r requirements.txt`."
+        )
+    if not bool(getattr(teslapy, "HAS_HTTPX", False)):
+        raise RuntimeError(
+            "The TeslaPy build with HTTP/2 support is required for Tesla's current login flow. "
+            "Run `pip install --upgrade --force-reinstall -r requirements.txt`."
+        )
     return teslapy
 
 
@@ -137,12 +154,6 @@ def resolve_static_path(relative_path: str) -> str:
 def guess_content_type(path: str) -> str:
     content_type, _ = mimetypes.guess_type(path)
     return content_type or "application/octet-stream"
-
-
-def normalize_code_verifier(value: Any) -> str:
-    if isinstance(value, bytes):
-        return value.decode("ascii")
-    return str(value)
 
 
 def resolve_tzinfo(time_zone: str) -> dt.tzinfo:

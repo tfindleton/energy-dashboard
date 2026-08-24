@@ -1,15 +1,109 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import datetime as dt
 import json
 import os
 import sys
 import tempfile
+import time
 from typing import Any, Dict, List, Optional
 
-from .common import DEFAULT_TESLAPY_TIMEOUT, import_teslapy, normalize_code_verifier
+from .common import DEFAULT_TESLAPY_TIMEOUT, import_teslapy
 from .scheduler import DEFAULT_SYNC_CRON, describe_sync_schedule, normalize_sync_cron
 from .service_base import DashboardServiceBase
+
+
+MAX_TOKEN_LENGTH = 32_768
+TESLA_SSO_BASE_URL = "https://auth.tesla.com/"
+
+
+def _normalize_named_token(value: Any, key: str, label: str) -> str:
+    payload = value if isinstance(value, dict) else None
+    raw = "" if payload is not None else str(value or "").strip()
+    if payload is None and raw.startswith("{"):
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise RuntimeError("The pasted token JSON is invalid.") from error
+    if payload is not None:
+        if not isinstance(payload, dict):
+            raise RuntimeError("The pasted token JSON must be an object.")
+        raw = str(payload.get(key, "") or "").strip()
+
+    if not raw:
+        raise RuntimeError(f"Paste the {label} from the native Tesla Auth helper.")
+    if len(raw) > MAX_TOKEN_LENGTH:
+        raise RuntimeError(f"The pasted {label} is unexpectedly large.")
+    if any(character.isspace() for character in raw):
+        raise RuntimeError(f"Paste only the {label}, without its label or extra text.")
+    return raw
+
+
+def normalize_refresh_token_input(value: Any) -> str:
+    return _normalize_named_token(value, "refresh_token", "refresh token")
+
+
+def normalize_access_token_input(value: Any) -> str:
+    return _normalize_named_token(value, "access_token", "access token")
+
+
+def decode_jwt_payload(token: str, label: str) -> Dict[str, Any]:
+    parts = token.split(".")
+    if len(parts) != 3:
+        raise RuntimeError(f"The pasted {label} is not a Tesla JWT.")
+    try:
+        encoded = parts[1] + ("=" * (-len(parts[1]) % 4))
+        payload = json.loads(base64.urlsafe_b64decode(encoded).decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, json.JSONDecodeError, binascii.Error) as error:
+        raise RuntimeError(f"The pasted {label} is malformed.") from error
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"The pasted {label} has an invalid payload.")
+    return payload
+
+
+def validate_native_token_pair(access_token: str, refresh_token: str) -> int:
+    access_claims = decode_jwt_payload(access_token, "access token")
+    try:
+        expires_at = int(access_claims.get("exp", 0) or 0)
+    except (TypeError, ValueError) as error:
+        raise RuntimeError("The pasted access token has no valid expiration time.") from error
+    if expires_at <= int(time.time()) + 30:
+        raise RuntimeError("The pasted access token is expired. Run Tesla Auth again and copy both fresh tokens.")
+
+    audience = access_claims.get("aud", [])
+    audiences = audience if isinstance(audience, list) else [audience]
+    if not any("owner-api.teslamotors.com" in str(item) for item in audiences):
+        raise RuntimeError("The pasted access token is not an Owner API token.")
+
+    # Current code-exchange tokens carry this encrypted-session marker. Tesla
+    # rejects a freshly refreshed token until the original pair bootstraps the
+    # Owner API session, so accepting a generic JWT here would recreate the 403.
+    if "x-enc" not in access_claims:
+        raise RuntimeError(
+            "This is not the original access token from Tesla Auth. "
+            "Run Tesla Auth again and copy both tokens from the same fresh result."
+        )
+
+    try:
+        refresh_claims = decode_jwt_payload(refresh_token, "refresh token")
+    except RuntimeError:
+        # Older Tesla refresh tokens may be opaque. The live bootstrap request
+        # below remains the authoritative validation in that case.
+        refresh_claims = {}
+    if refresh_claims:
+        access_subject = access_claims.get("sub")
+        refresh_subject = refresh_claims.get("sub")
+        if access_subject and refresh_subject and access_subject != refresh_subject:
+            raise RuntimeError("The access and refresh tokens are from different Tesla sessions.")
+        try:
+            refresh_expires_at = int(refresh_claims.get("exp", 0) or 0)
+        except (TypeError, ValueError):
+            refresh_expires_at = 0
+        if refresh_expires_at and refresh_expires_at <= int(time.time()) + 30:
+            raise RuntimeError("The pasted refresh token is expired. Run Tesla Auth again.")
+    return expires_at
 
 
 class ServiceAuthMixin(DashboardServiceBase):
@@ -74,14 +168,11 @@ class ServiceAuthMixin(DashboardServiceBase):
 
     def config_public_payload(self) -> Dict[str, Any]:
         config = self.load_config()
-        pending_auth = config.get("pending_auth") or {}
         return {
             "email": config.get("email", ""),
             "energy_site_id": config.get("energy_site_id", ""),
             "time_zone": config.get("time_zone", ""),
             "sync_cron": self.effective_sync_cron(),
-            "auth_pending": bool(pending_auth),
-            "pending_auth_url": pending_auth.get("authorization_url", ""),
             "download_root": os.path.relpath(self.download_root),
         }
 
@@ -98,7 +189,7 @@ class ServiceAuthMixin(DashboardServiceBase):
                     config.pop(key, None)
 
         if config.get("email") != old_email:
-            for key in ("teslapy_cache", "pending_auth"):
+            for key in ("teslapy_cache", "pending_auth", "owner_api_bootstrapped"):
                 config.pop(key, None)
 
         self.save_config(config)
@@ -126,6 +217,9 @@ class ServiceAuthMixin(DashboardServiceBase):
     def auth_configured(self) -> bool:
         if not self.auth_login_ready():
             return False
+        config = self.load_config()
+        if not config.get("owner_api_bootstrapped"):
+            return False
         try:
             with self._tesla_session() as tesla:
                 return bool(tesla.authorized)
@@ -140,12 +234,7 @@ class ServiceAuthMixin(DashboardServiceBase):
         config["teslapy_cache"] = cache
         self.save_config(config)
 
-    def _tesla_session(
-        self,
-        email: Optional[str] = None,
-        state: Optional[str] = None,
-        code_verifier: Optional[str] = None,
-    ) -> Any:
+    def _tesla_session(self, email: Optional[str] = None) -> Any:
         teslapy = import_teslapy()
         config = self.load_config()
         active_email = email or config.get("email")
@@ -157,44 +246,58 @@ class ServiceAuthMixin(DashboardServiceBase):
             cache_dumper=self._teslapy_cache_dumper,
             retry=2,
             timeout=DEFAULT_TESLAPY_TIMEOUT,
-            state=state,
-            code_verifier=code_verifier,
         )
 
-    def start_web_login(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+    def import_token_pair(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        access_token = normalize_access_token_input(updates.get("access_token"))
+        refresh_token = normalize_refresh_token_input(updates.get("refresh_token"))
+        expires_at = validate_native_token_pair(access_token, refresh_token)
         self.save_user_config(updates)
         config = self.load_config()
-        if not config.get("email"):
+        email = str(config.get("email", "") or "").strip()
+        if not email:
             raise RuntimeError("Tesla account email is required.")
-        with self._tesla_session() as tesla:
-            if tesla.authorized:
-                return {"authorization_url": "", "already_authorized": True}
-            state = tesla.new_state()
-            code_verifier = tesla.new_code_verifier()
-            authorization_url = tesla.authorization_url(state=state, code_verifier=code_verifier)
-        config["pending_auth"] = {
-            "email": config["email"],
-            "state": state,
-            "code_verifier": normalize_code_verifier(code_verifier),
-            "authorization_url": authorization_url,
-        }
-        self.save_config(config)
-        return {"authorization_url": authorization_url, "already_authorized": False}
 
-    def finish_web_login(self, authorization_response: str) -> Dict[str, Any]:
-        if not authorization_response:
-            raise RuntimeError("Paste the full Tesla URL from the final page.")
-        config = self.load_config()
-        pending_auth = config.get("pending_auth") or {}
-        email = pending_auth.get("email") or config.get("email")
-        state = pending_auth.get("state")
-        code_verifier = pending_auth.get("code_verifier")
-        if not (email and state and code_verifier):
-            raise RuntimeError("No Tesla sign-in is in progress. Start sign-in first.")
-        with self._tesla_session(email=email, state=state, code_verifier=code_verifier) as tesla:
-            tesla.fetch_token(authorization_response=authorization_response)
+        now = int(time.time())
+        config["teslapy_cache"] = {
+            email: {
+                "url": TESLA_SSO_BASE_URL,
+                "sso": {
+                    "access_token": access_token,
+                    "refresh_token": refresh_token,
+                    "token_type": "Bearer",
+                    "expires_at": expires_at,
+                    "expires_in": max(expires_at - now, 1),
+                },
+            }
+        }
+        config.pop("owner_api_bootstrapped", None)
+        self.save_config(config)
+
+        try:
+            with self._tesla_session(email=email) as tesla:
+                if not tesla.authorized:
+                    raise RuntimeError("Tesla did not accept the native token pair.")
+                # This first Owner API request is required before refresh-token
+                # rotation works reliably. Do not refresh the imported pair first.
+                tesla.api("PRODUCT_LIST")
+        except Exception as error:
+            failed_config = self.load_config()
+            failed_config.pop("teslapy_cache", None)
+            failed_config.pop("owner_api_bootstrapped", None)
+            self.save_config(failed_config)
+            response = getattr(error, "response", None)
+            status_code = getattr(response, "status_code", None)
+            if status_code in (401, 403) or "403" in str(error):
+                raise RuntimeError(
+                    "Tesla rejected this token pair. Run Tesla Auth again and paste both the access token "
+                    "and refresh token from the same fresh result; importing only a refresh token causes this 403."
+                ) from error
+            raise RuntimeError(f"Unable to validate the Tesla token pair: {error}") from error
+
         config = self.load_config()
         config.pop("pending_auth", None)
+        config["owner_api_bootstrapped"] = True
         self.save_config(config)
         return {"authorized": True}
 
@@ -202,5 +305,6 @@ class ServiceAuthMixin(DashboardServiceBase):
         config = self.load_config()
         config.pop("teslapy_cache", None)
         config.pop("pending_auth", None)
+        config.pop("owner_api_bootstrapped", None)
         self.save_config(config)
         return {"authorized": False}

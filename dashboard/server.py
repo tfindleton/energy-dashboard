@@ -176,13 +176,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         try:
-            if parsed.path == "/api/auth/start":
+            if parsed.path == "/api/auth/import-token-pair":
                 payload = self.read_json_body()
-                self.respond_json(self.app.start_web_login(payload))
-                return
-            if parsed.path == "/api/auth/finish":
-                payload = self.read_json_body()
-                self.respond_json(self.app.finish_web_login(str(payload.get("authorization_response", "") or "").strip()))
+                self.respond_json(self.app.import_token_pair(payload))
                 return
             if parsed.path == "/api/auth/logout":
                 self.respond_json(self.app.logout())

@@ -54,8 +54,7 @@
       <div id="signInDetails">
       <div id="wizardIntro">
       <p class="subtle">
-        This app uses the same local-browser flow as <code>tesla-solar-download</code>. Work through
-        the steps below in order and the rest of the dashboard will unlock once local data exists.
+        Use the native Tesla Auth helper to complete Tesla's app callback reliably, then import the fresh token pair here.
       </p>
       </div>
       <div id="wizardContainer" class="wizard">
@@ -73,55 +72,50 @@
                 <label for="energySiteId">Optional Site ID</label>
                 <input id="energySiteId" type="text" autocomplete="off" spellcheck="false">
               </div>
-              <div class="field">
-                <label for="startLoginButton">Generate Link</label>
-                <button id="startLoginButton" class="secondary">Generate Tesla Login Link</button>
-              </div>
             </div>
           </div>
         </section>
 
-        <section id="wizardStepLoginLink" class="wizard-step">
+        <section id="wizardStepNative" class="wizard-step">
           <div class="wizard-marker">2</div>
           <div class="wizard-body">
-            <h3 class="wizard-title">Open Tesla Login</h3>
-            <p class="subtle">Use the generated Tesla sign-in link. You can open it directly or copy it somewhere else.</p>
-            <div class="field">
-              <label for="generatedAuthUrl">Generated Tesla Login URL</label>
-              <input id="generatedAuthUrl" type="text" readonly spellcheck="false" placeholder="Generate the Tesla login link first">
-            </div>
-            <div class="wizard-actions">
-              <button id="openLoginLinkButton" class="secondary" disabled>Open Tesla Login</button>
-              <button id="copyLoginLinkButton" disabled>Copy Login Link</button>
-            </div>
-          </div>
-        </section>
-
-        <section id="wizardStepFinish" class="wizard-step">
-          <div class="wizard-marker">3</div>
-          <div class="wizard-body">
-            <h3 class="wizard-title">Paste Final Tesla URL</h3>
-            <p class="subtle">After Tesla finishes, copy the final URL from the expected Page Not Found page and paste it here.</p>
+            <h3 class="wizard-title">Sign In with Tesla Auth</h3>
+            <p class="subtle">
+              Download the open-source <a class="auth-helper-link" href="https://github.com/adriankumpf/tesla_auth/releases/latest" target="_blank" rel="noopener noreferrer">Tesla Auth helper</a>,
+              run it with <code>--clear-browsing-data</code>, and complete sign-in in its native window.
+              It captures <code>tesla://auth/callback</code> automatically. Copy both tokens from the same fresh result below.
+            </p>
             <div class="setup-grid wizard-grid">
               <div class="field wide">
-                <label for="authorizationResponse">Final Tesla URL</label>
-                <input id="authorizationResponse" type="text" autocomplete="off" spellcheck="false" placeholder="https://auth.tesla.com/void/callback?...">
+                <label for="accessToken">Access Token</label>
+                <input id="accessToken" type="password" autocomplete="off" spellcheck="false" placeholder="Paste the fresh access token">
+              </div>
+              <div class="field wide">
+                <label for="refreshToken">Refresh Token</label>
+                <input id="refreshToken" type="password" autocomplete="off" spellcheck="false" placeholder="Paste the matching refresh token">
               </div>
               <div class="field">
-                <label for="finishLoginButton">Complete Sign-In</label>
-                <button id="finishLoginButton">Finish Sign In</button>
-              </div>
-              <div class="field">
-                <label for="logoutButton">Reset Session</label>
-                <button id="logoutButton">Sign Out</button>
+                <label for="importTokenPairButton">Complete Sign-In</label>
+                <button id="importTokenPairButton">Import Token Pair</button>
               </div>
             </div>
+            <p class="auth-security-note">Tesla requires the original access token for the first Owner API request; importing only the refresh token causes a 403. The pair is stored only in the dashboard's private auth file and is never included in an API response.</p>
           </div>
         </section>
       </div>
       <div id="wizardHint" class="footer-note">
-        The Tesla page will end on a <code>Page Not Found</code> screen at <code>auth.tesla.com</code>.
-        That is expected for this local-only flow.
+        Generate a fresh pair with Tesla Auth whenever the dashboard asks you to sign in again.
+      </div>
+      <div id="connectedAuthActions" class="compact-bar" hidden>
+        <div class="compact-main">
+          <div class="compact-label">Tesla Sign-In</div>
+          <div class="compact-value">Connected</div>
+          <div class="compact-meta">The cached Tesla session is ready for manual and scheduled syncs.</div>
+        </div>
+        <div class="compact-actions">
+          <span class="status-chip">Session ready</span>
+          <button id="logoutButton" class="secondary">Sign Out</button>
+        </div>
       </div>
       <div class="footer-note">
         Once sign-in is complete, this app keeps the Tesla session token locally so future syncs only need to fetch new data.

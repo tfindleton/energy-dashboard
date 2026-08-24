@@ -93,7 +93,6 @@ const state = {
   performancePayload: null,
   patternPayload: null,
   trendPayload: null,
-  generatedAuthUrl: "",
   performanceScope: "month",
   revealEmail: false,
   syncPollTimer: null,
@@ -147,7 +146,7 @@ function updateBootOverlayForStatus(status) {
     showBootOverlay("Loading dashboard", "Tesla is connected. Checking local data availability and sync state.");
     return;
   }
-  if (status.auth_pending || (status.config?.email || "").trim()) {
+  if ((status.config?.email || "").trim()) {
     showBootOverlay("Loading dashboard", "Restoring your Tesla sign-in setup and local dashboard state.");
     return;
   }
@@ -639,13 +638,6 @@ function setButtonBusy(button, busy, label) {
   button.innerHTML = button.dataset.originalHtml || button.dataset.originalLabel;
 }
 
-function setGeneratedAuthUrl(url) {
-  state.generatedAuthUrl = url || "";
-  $("generatedAuthUrl").value = state.generatedAuthUrl;
-  $("openLoginLinkButton").disabled = !state.generatedAuthUrl;
-  $("copyLoginLinkButton").disabled = !state.generatedAuthUrl;
-}
-
 function maskEmail(email, reveal = false) {
   const normalized = String(email || "").trim();
   if (!normalized) {
@@ -709,60 +701,29 @@ function updateSignInPanel(status) {
 }
 
 function updateWizard(status) {
-  const hasEmail = Boolean((status.config?.email || "").trim());
-  const hasAuthUrl = Boolean(state.generatedAuthUrl || status.config?.pending_auth_url);
-  const pending = Boolean(status.auth_pending);
+  const emailValue = $("teslaEmail")?.value ?? status.config?.email ?? "";
+  const hasEmail = Boolean(String(emailValue).trim());
   const connected = Boolean(status.auth_configured);
   $("wizardIntro").hidden = connected;
   $("wizardContainer").hidden = connected;
   $("wizardHint").hidden = connected;
+  $("connectedAuthActions").hidden = !connected;
 
   setStepState("wizardStepAccount", {
-    active: !connected && !hasAuthUrl,
-    completed: hasEmail || pending || connected
+    active: !connected && !hasEmail,
+    completed: hasEmail || connected
   });
-  setStepState("wizardStepLoginLink", {
-    active: !connected && hasAuthUrl,
-    completed: pending || connected
-  });
-  setStepState("wizardStepFinish", {
-    active: !connected && pending,
+  setStepState("wizardStepNative", {
+    active: !connected && hasEmail,
     completed: connected
   });
 
-  $("authorizationResponse").disabled = !pending;
-  $("finishLoginButton").disabled = !pending;
-  $("logoutButton").disabled = !pending && !connected;
-  $("startLoginButton").disabled = connected;
+  $("accessToken").disabled = connected;
+  $("refreshToken").disabled = connected;
+  $("importTokenPairButton").disabled = connected;
+  $("logoutButton").disabled = !connected;
   $("teslaEmail").disabled = connected;
   $("energySiteId").disabled = connected;
-
-  if (connected) {
-    $("wizardHint").textContent = "Tesla sign-in is complete. You can sync new data whenever you want, and the scheduled sync will only fetch what is missing.";
-  } else if (pending) {
-    $("wizardHint").innerHTML = "Tesla will finish on a <code>Page Not Found</code> screen at <code>auth.tesla.com</code>. Copy that final URL and paste it into Step 3.";
-  } else {
-    $("wizardHint").innerHTML = "Generate the Tesla login link first. The Tesla page will end on a <code>Page Not Found</code> screen at <code>auth.tesla.com</code>, which is expected.";
-  }
-}
-
-async function copyText(value) {
-  if (!value) {
-    throw new Error("Nothing is available to copy yet.");
-  }
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(value);
-    return;
-  }
-  const helper = document.createElement("textarea");
-  helper.value = value;
-  helper.setAttribute("readonly", "readonly");
-  helper.style.position = "absolute";
-  helper.style.left = "-9999px";
-  document.body.appendChild(helper);
-  helper.select();
-  document.execCommand("copy");
-  helper.remove();
 }
 
 function currentSiteId() {
@@ -1248,7 +1209,6 @@ function hydrateSetupForm(status) {
   const config = status.config || {};
   $("teslaEmail").value = config.email || "";
   $("energySiteId").value = config.energy_site_id || "";
-  setGeneratedAuthUrl(config.pending_auth_url || state.generatedAuthUrl);
 }
 
 function hydrateSyncControls(status) {
@@ -1625,19 +1585,11 @@ function renderHeroStatus(status) {
           tone: "good",
           icon: "shield"
         }
-      : status.auth_pending
-        ? {
-            label: "Sign-In Status",
-            value: "Pending",
-            detail: "Paste the final Tesla URL to finish the Tesla sign-in flow.",
-            tone: "warning",
-            icon: "shield"
-          }
-        : email
+      : email
           ? {
               label: "Sign-In Status",
               value: "Setup Started",
-              detail: "Generate the Tesla login link and finish sign-in to unlock syncing.",
+              detail: "Run Tesla Auth and import both tokens from the same fresh result.",
               tone: "warning",
               icon: "shield"
             }
@@ -2632,77 +2584,36 @@ function stopSyncStatusPolling() {
   state.syncPollTimer = null;
 }
 
-async function startTeslaLogin() {
+async function importTeslaTokenPair() {
   if (state.status?.auth_configured) {
     setSetupStatus("Tesla is already signed in on this server.", "good");
     return;
   }
-  const button = $("startLoginButton");
-  setButtonBusy(button, true, "Generating...");
-  setSetupStatus("Generating Tesla sign-in link...");
+  const button = $("importTokenPairButton");
+  const accessToken = $("accessToken").value.trim();
+  const refreshToken = $("refreshToken").value.trim();
+  if (!accessToken || !refreshToken) {
+    setSetupStatus("Paste both tokens from the same fresh Tesla Auth result.", "error");
+    return;
+  }
+  setButtonBusy(button, true, "Importing...");
+  setSetupStatus("Validating the fresh token pair with Tesla...");
   try {
-    const payload = await fetchJson("/api/auth/start", {
+    await fetchJson("/api/auth/import-token-pair", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         email: $("teslaEmail").value.trim(),
-        energy_site_id: $("energySiteId").value.trim()
-      })
+        energy_site_id: $("energySiteId").value.trim(),
+        access_token: accessToken,
+        refresh_token: refreshToken
+      }),
+      timeoutMs: 60000
     });
-    if (payload.already_authorized) {
-      setGeneratedAuthUrl("");
-      setSetupStatus("Tesla is already signed in on this server.", "good");
-      await loadStatus();
-      await reloadDataViews();
-      return;
-    }
-    if (payload.authorization_url) {
-      setGeneratedAuthUrl(payload.authorization_url);
-      window.open(payload.authorization_url, "_blank", "noopener");
-    }
-    setSetupStatus("Tesla login link is ready. Step 2 can open it again, or copy it, then paste the final Tesla URL into Step 3.", "good");
-    await loadStatus();
-  } catch (error) {
-    setSetupStatus(error.message, "error");
-  } finally {
-    setButtonBusy(button, false);
-  }
-}
-
-function openGeneratedLoginLink() {
-  if (!state.generatedAuthUrl) {
-    setSetupStatus("Generate the Tesla login link first.", "error");
-    return;
-  }
-  window.open(state.generatedAuthUrl, "_blank", "noopener");
-  setSetupStatus("Tesla login opened in a new tab.", "good");
-}
-
-async function copyGeneratedLoginLink() {
-  try {
-    await copyText(state.generatedAuthUrl);
-    setSetupStatus("Tesla login link copied.", "good");
-  } catch (error) {
-    setSetupStatus(error.message, "error");
-  }
-}
-
-async function finishTeslaLogin() {
-  const button = $("finishLoginButton");
-  setButtonBusy(button, true, "Finishing...");
-  setSetupStatus("Completing Tesla sign-in...");
-  try {
-    await fetchJson("/api/auth/finish", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        authorization_response: $("authorizationResponse").value.trim()
-      })
-    });
-    setGeneratedAuthUrl("");
-    $("authorizationResponse").value = "";
+    $("accessToken").value = "";
+    $("refreshToken").value = "";
     state.revealEmail = false;
-    setSetupStatus("Tesla sign-in completed.", "good");
+    setSetupStatus("Tesla native sign-in completed.", "good");
     await loadStatus();
     await reloadDataViews();
   } catch (error) {
@@ -2723,8 +2634,8 @@ async function logoutTesla(event) {
       body: JSON.stringify({})
     });
     state.revealEmail = false;
-    setGeneratedAuthUrl("");
-    $("authorizationResponse").value = "";
+    $("accessToken").value = "";
+    $("refreshToken").value = "";
     setSetupStatus("Tesla session cleared.", "good");
     await loadStatus();
     await reloadDataViews();
@@ -2794,10 +2705,10 @@ async function runSync() {
   const button = $("syncButton");
   if (!state.status?.auth_configured) {
     const message = !state.status?.library_ready
-      ? "Install requirements first: pip install -r requirements.txt"
+      ? "Install or upgrade requirements: pip install --upgrade -r requirements.txt"
       : state.status?.auth_login_ready
         ? "Sign in with Tesla before syncing."
-        : "Enter your Tesla account email and start sign-in first.";
+        : "Enter your Tesla account email and complete sign-in with Tesla Auth first.";
     setStatus(message, "error");
     return;
   }
@@ -2984,12 +2895,16 @@ function pageComparisonWindow(direction) {
 }
 
 function wireEvents() {
-  $("startLoginButton").addEventListener("click", startTeslaLogin);
-  $("openLoginLinkButton").addEventListener("click", openGeneratedLoginLink);
-  $("copyLoginLinkButton").addEventListener("click", () => {
-    copyGeneratedLoginLink().catch((error) => setSetupStatus(error.message, "error"));
+  $("importTokenPairButton").addEventListener("click", importTeslaTokenPair);
+  $("teslaEmail").addEventListener("input", () => updateWizard(state.status || { config: {} }));
+  ["accessToken", "refreshToken"].forEach((id) => {
+    $(id).addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        importTeslaTokenPair().catch((error) => setSetupStatus(error.message, "error"));
+      }
+    });
   });
-  $("finishLoginButton").addEventListener("click", finishTeslaLogin);
   $("logoutButton").addEventListener("click", logoutTesla);
   $("syncButton").addEventListener("click", runSync);
   $("saveSyncCronButton").addEventListener("click", saveSyncSchedule);
