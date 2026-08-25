@@ -150,7 +150,7 @@ Behavior:
 The app version is defined once in `dashboard/__init__.py`:
 
 ```python
-__version__ = "0.1.5"
+__version__ = "0.1.7"
 ```
 
 `pyproject.toml` reads the version dynamically from that attribute, so `pip install` and CI/CD tagging both use the same source. The version is displayed in the web UI header and returned by the `/api/status` endpoint.
